@@ -97,6 +97,7 @@ class MainActivity : AppCompatActivity() {
         player = ExoPlayer.Builder(this).build().also { playerView.player = it }
         backButton.setOnClickListener { showGroups() }
         fullscreenButton.setOnClickListener { toggleFullscreen() }
+        playerView.setOnClickListener { toggleFullscreen() }
         searchInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
 
@@ -157,6 +158,12 @@ class MainActivity : AppCompatActivity() {
                 showGroups()
                 return true
             }
+        } else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN && isFullscreen && player != null) {
+            playerView.useController = true
+            return true
+        } else if (keyCode == KeyEvent.KEYCODE_DPAD_UP && isFullscreen && player != null) {
+            playerView.useController = false
+            return true
         }
         return super.onKeyDown(keyCode, event)
     }
@@ -252,6 +259,7 @@ class MainActivity : AppCompatActivity() {
             prepare()
             playWhenReady = true
         }
+        playerView.useController = false
     }
 
     private fun buildStreamUrl(
@@ -270,8 +278,11 @@ class MainActivity : AppCompatActivity() {
     private fun toggleFullscreen() {
         isFullscreen = !isFullscreen
         if (isFullscreen) {
+            fullscreenButton.visibility = View.GONE
+            playerView.useController = false
             fullConstraints.applyTo(mainContainer)
         } else {
+            fullscreenButton.visibility = View.VISIBLE
             normalConstraints.applyTo(mainContainer)
         }
     }
