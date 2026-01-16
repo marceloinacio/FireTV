@@ -358,8 +358,18 @@ class MainActivity : AppCompatActivity() {
         }
 
         state = UiState.ShowSearchResults
-        val filteredChannels = groups.flatMap { it.channels }.filter { it.name.contains(query, ignoreCase = true) }
-        adapter.submit(filteredChannels.map { ListItem.ChannelItem(it) })
+       
+        // Search through all channels (live, movies/VOD)
+        val filteredChannels = allStreams.filter { it.name.contains(query, ignoreCase = true) }
+        val channelItems = filteredChannels.map { ListItem.ChannelItem(it) }
+       
+        // Search through all series
+        val filteredSeries = seriesList.filter { it.name.contains(query, ignoreCase = true) }
+        val seriesItems = filteredSeries.map { ListItem.SeriesItem(it) }
+       
+        // Combine all results
+        val allResults = channelItems + seriesItems
+        adapter.submit(allResults)
         listTitle.setText(R.string.search_results_title)
         backButton.visibility = View.VISIBLE
     }
