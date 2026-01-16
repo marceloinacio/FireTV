@@ -1,6 +1,7 @@
 package com.tvapp
 
 import com.google.gson.Gson
+import com.google.gson.JsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -37,11 +38,58 @@ class XtreamApi(
         val vodJson = request(vodUrl) ?: ""
         val vodStreams = gson.fromJson(vodJson, Array<Stream>::class.java)?.toList() ?: emptyList()
         
+        return liveStreams + vodStreams
+    }
+
+    suspend fun fetchSeries(): List<SeriesInfo> {
         val seriesUrl = buildUrl("get_series")
-        val seriesJson = request(seriesUrl) ?: ""
-        val seriesStreams = gson.fromJson(seriesJson, Array<Stream>::class.java)?.toList() ?: emptyList()
+        val seriesJson = request(seriesUrl) ?: return emptyList()
         
-        return liveStreams + vodStreams + seriesStreams
+        val seriesArray = gson.fromJson(seriesJson, Array<JsonObject>::class.java) ?: return emptyList()
+        return seriesArray.mapNotNull { seriesObj ->
+            val seriesId = seriesObj.get("series_id")?.asInt ?: return@mapNotNull null
+            val name = seriesObj.get("name")?.asString ?: ""
+            val categoryId = seriesObj.get("category_id")?.asString ?: ""
+            
+            // Initially return series without seasons - we'll fetch them on demand
+            SeriesInfo(seriesId, name, categoryId, emptyMap())
+        }
+    }
+
+    suspend fun fetchSeriesDetails(seriesId: Int): SeriesInfo? {
+        val seriesUrl = buildUrl("get_series_info") + "&series_id=${seriesId}"
+        val seriesJson = request(seriesUrl) ?: return null
+        
+        try {
+            val seriesObj = gson.fromJson(seriesJson, JsonObject::class.java)
+            val info = seriesObj.getAsJsonObject("info")
+            val name = info?.get("name")?.asString ?: ""
+            val categoryId = info?.get("category_id")?.asString ?: ""
+            
+            val seasons = mutableMapOf<Int, List<Episode>>()
+            val episodesObj = seriesObj.getAsJsonObject("episodes")
+            
+            episodesObj?.entrySet()?.forEach { (seasonKey, seasonValue) ->
+                val seasonNum = seasonKey.toIntOrNull() ?: return@forEach
+                val episodesArray = seasonValue.asJsonArray
+                val episodes = mutableListOf<Episode>()
+                
+                episodesArray.forEach { episodeElement ->
+                    val episodeObj = episodeElement.asJsonObject
+                    val episodeNum = episodeObj.get("episode_num")?.asInt ?: return@forEach
+                    val episodeTitle = episodeObj.get("title")?.asString ?: "Episode $episodeNum"
+                    episodes.add(Episode(episodeNum, episodeTitle, seasonNum))
+                }
+                
+                if (episodes.isNotEmpty()) {
+                    seasons[seasonNum] = episodes.sortedBy { it.episode_num }
+                }
+            }
+            
+            return SeriesInfo(seriesId, name, categoryId, seasons)
+        } catch (e: Exception) {
+            return null
+        }
     }
 
     private fun buildUrl(action: String): String {

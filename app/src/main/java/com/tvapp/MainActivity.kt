@@ -53,11 +53,18 @@ class MainActivity : AppCompatActivity() {
     private var state: UiState = UiState.ShowGroups
     private var groups: List<Group> = emptyList()
     private var allStreams: List<Stream> = emptyList()
+    private var seriesList: List<SeriesInfo> = emptyList()
     private lateinit var fullscreenButton: ImageButton
+    private var baseUrl = ""
+    private var username = ""
+    private var password = ""
 
     private val adapter = ChannelAdapter(
         onChannelClick = { stream -> startPlayback(stream) },
         onGroupClick = { group -> showChannelsIn(group) },
+        onSeriesClick = { series -> showSeriesSeasons(series) },
+        onSeasonClick = { seriesId, season -> showSeasonEpisodes(seriesId, season) },
+        onEpisodeClick = { seriesId, season, episode -> playEpisode(seriesId, season, episode) },
         onChannelLongClick = { stream -> toggleFavorite(stream) },
         isFavorite = { stream -> getFavoriteIds().contains(stream.stream_id) }
     )
@@ -70,6 +77,11 @@ class MainActivity : AppCompatActivity() {
             when (state) {
                 is UiState.ShowChannels -> showGroups()
                 is UiState.ShowSearchResults -> showGroups()
+                is UiState.ShowSeriesSeasons -> showGroups()
+                is UiState.ShowSeasonEpisodes -> {
+                    val seriesState = state as UiState.ShowSeriesSeasons
+                    showSeriesSeasons(seriesList.find { it.series_id == seriesState.seriesId } ?: return@addCallback)
+                }
                 else -> finish()
             }
         }
@@ -222,22 +234,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadPlaylist(url: String, username: String, password: String) {
+        this.baseUrl = url
+        this.username = username
+        this.password = password
         lifecycleScope.launch {
             val api = XtreamApi(url, username, password)
             val categories = withContext(Dispatchers.IO) { api.fetchCategories() }
             val streams = withContext(Dispatchers.IO) { api.fetchStreams() }
+            val series = withContext(Dispatchers.IO) { api.fetchSeries() }
 
             allStreams = streams
-            groups = buildGroups(categories, streams)
+            seriesList = series
+            groups = buildGroups(categories, streams, series)
             showGroups()
         }
     }
 
-    private fun buildGroups(categories: List<Category>, streams: List<Stream>): List<Group> {
+    private fun buildGroups(categories: List<Category>, streams: List<Stream>, series: List<SeriesInfo>): List<Group> {
         val categoryMap = categories.associateBy { it.category_id }
         val grouped = streams.groupBy { it.category_id }
+        val seriesGrouped = series.groupBy { it.category_id }
         val sortedCategories = categories.sortedBy { it.category_name.lowercase() }.toMutableList()
-        if (grouped.keys.any { it !in categoryMap }) {
+        if ((grouped.keys + seriesGrouped.keys).any { it !in categoryMap }) {
             sortedCategories.add(Category("0", "Other"))
         }
 
@@ -309,7 +327,13 @@ class MainActivity : AppCompatActivity() {
         val recentsGroup = buildRecentsGroup()
         val favoritesGroup = buildFavoritesGroup()
         val displayGroups = listOfNotNull(recentsGroup, favoritesGroup) + groups
-        adapter.submit(ListItem.from(displayGroups))
+        
+        val allItems = mutableListOf<ListItem>()
+        allItems.addAll(ListItem.from(displayGroups))
+        // Add series as items
+        allItems.addAll(ListItem.fromSeries(seriesList.sortedBy { it.name.lowercase() }))
+        
+        adapter.submit(allItems)
         backButton.visibility = View.GONE
         listTitle.setText(R.string.channels_title)
         searchInput.text.clear()
@@ -394,6 +418,9 @@ class MainActivity : AppCompatActivity() {
                     restoreFocusToStream(focusedStreamId)
                 }
             }
+            is UiState.ShowSeriesSeasons, is UiState.ShowSeasonEpisodes -> {
+                // Do nothing for series states
+            }
         }
     }
     
@@ -408,6 +435,70 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun showSeriesSeasons(series: SeriesInfo) {
+        state = UiState.ShowSeriesSeasons(series.series_id)
+        backButton.visibility = View.VISIBLE
+        listTitle.text = series.name
+        searchInput.text.clear()
+        
+        // Fetch series details with seasons and episodes
+        lifecycleScope.launch {
+            val api = XtreamApi(baseUrl, username, password)
+            val seriesDetails = withContext(Dispatchers.IO) { api.fetchSeriesDetails(series.series_id) }
+            
+            if (seriesDetails != null && seriesDetails.seasons.isNotEmpty()) {
+                // Update the series in the list
+                val updatedList = seriesList.map { 
+                    if (it.series_id == series.series_id) seriesDetails else it 
+                }
+                seriesList = updatedList
+                
+                val seasonItems = ListItem.fromSeriesSeasons(seriesDetails.series_id, seriesDetails.name, seriesDetails.seasons)
+                adapter.submit(seasonItems)
+            } else {
+                // No seasons found
+                adapter.submit(emptyList())
+            }
+        }
+    }
+
+    private fun showSeasonEpisodes(seriesId: Int, season: Int) {
+        val series = seriesList.find { it.series_id == seriesId } ?: return
+        val episodes = series.seasons[season] ?: return
+        state = UiState.ShowSeasonEpisodes(seriesId, season)
+        val episodeItems = ListItem.fromSeasonEpisodes(seriesId, season, episodes)
+        adapter.submit(episodeItems)
+        backButton.visibility = View.VISIBLE
+        listTitle.text = "${series.name} - Season $season"
+        searchInput.text.clear()
+    }
+
+    private fun playEpisode(seriesId: Int, season: Int, episode: Episode) {
+        val episodeUrl = buildSeriesUrl(baseUrl, username, password, seriesId, season, episode.episode_num)
+        nowPlaying.text = "Now Playing: ${episode.title}"
+        val mediaItem = MediaItem.fromUri(episodeUrl)
+        player?.apply {
+            setMediaItem(mediaItem)
+            prepare()
+            playWhenReady = true
+        }
+        playerView.useController = false
+    }
+
+    private fun buildSeriesUrl(
+        baseUrl: String,
+        username: String,
+        password: String,
+        seriesId: Int,
+        season: Int,
+        episode: Int
+    ): String {
+        val normalized = baseUrl.trimEnd('/')
+        val streamUrl = "${normalized}/series/${username}/${password}/${seriesId}/${season}/${episode}.mkv"
+        Log.d("MainActivity", "Playing series: $streamUrl")
+        return streamUrl
     }
 
     private fun buildFavoritesGroup(): Group {
@@ -431,11 +522,16 @@ private sealed class UiState {
     object ShowGroups : UiState()
     data class ShowChannels(val group: Group) : UiState()
     object ShowSearchResults : UiState()
+    data class ShowSeriesSeasons(val seriesId: Int) : UiState()
+    data class ShowSeasonEpisodes(val seriesId: Int, val season: Int) : UiState()
 }
 
 private class ChannelAdapter(
     private val onChannelClick: (Stream) -> Unit,
     private val onGroupClick: (Group) -> Unit,
+    private val onSeriesClick: (SeriesInfo) -> Unit,
+    private val onSeasonClick: (Int, Int) -> Unit,
+    private val onEpisodeClick: (Int, Int, Episode) -> Unit,
     private val onChannelLongClick: (Stream) -> Unit,
     private val isFavorite: (Stream) -> Boolean
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
@@ -451,17 +547,35 @@ private class ChannelAdapter(
         return when (items[position]) {
             is ListItem.GroupItem -> 0
             is ListItem.ChannelItem -> 1
+            is ListItem.SeriesItem -> 4
+            is ListItem.SeasonItem -> 2
+            is ListItem.EpisodeItem -> 3
         }
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
         val inflater = LayoutInflater.from(parent.context)
-        return if (viewType == 0) {
-            val view = inflater.inflate(R.layout.item_category, parent, false)
-            GroupViewHolder(view, onGroupClick)
-        } else {
-            val view = inflater.inflate(R.layout.item_channel, parent, false)
-            ChannelViewHolder(view, onChannelClick, onChannelLongClick, isFavorite)
+        return when (viewType) {
+            0 -> {
+                val view = inflater.inflate(R.layout.item_category, parent, false)
+                GroupViewHolder(view, onGroupClick)
+            }
+            1 -> {
+                val view = inflater.inflate(R.layout.item_channel, parent, false)
+                ChannelViewHolder(view, onChannelClick, onChannelLongClick, isFavorite)
+            }
+            4 -> {
+                val view = inflater.inflate(R.layout.item_category, parent, false)
+                SeriesViewHolder(view, onSeriesClick)
+            }
+            2 -> {
+                val view = inflater.inflate(R.layout.item_channel, parent, false)
+                SeasonViewHolder(view, onSeasonClick)
+            }
+            else -> {
+                val view = inflater.inflate(R.layout.item_channel, parent, false)
+                EpisodeViewHolder(view, onEpisodeClick)
+            }
         }
     }
 
@@ -469,6 +583,9 @@ private class ChannelAdapter(
         when (val item = items[position]) {
             is ListItem.GroupItem -> (holder as GroupViewHolder).bind(item)
             is ListItem.ChannelItem -> (holder as ChannelViewHolder).bind(item)
+            is ListItem.SeriesItem -> (holder as SeriesViewHolder).bind(item)
+            is ListItem.SeasonItem -> (holder as SeasonViewHolder).bind(item)
+            is ListItem.EpisodeItem -> (holder as EpisodeViewHolder).bind(item)
         }
     }
 
@@ -523,5 +640,72 @@ private class ChannelViewHolder(
         val fav = isFavorite(item.stream)
         val endDrawable = if (fav) R.drawable.ic_star_24 else 0
         title.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, endDrawable, 0)
+    }
+}
+
+private class SeriesViewHolder(
+    view: View,
+    private val onSeriesClick: (SeriesInfo) -> Unit
+) : RecyclerView.ViewHolder(view) {
+    private val title: TextView = view.findViewById(R.id.category_title)
+    private var series: SeriesInfo? = null
+
+    init {
+        view.setOnClickListener {
+            series?.let { onSeriesClick(it) }
+        }
+    }
+
+    fun bind(item: ListItem.SeriesItem) {
+        series = item.series
+        title.text = item.series.name
+    }
+}
+
+private class SeasonViewHolder(
+    view: View,
+    private val onSeasonClick: (Int, Int) -> Unit
+) : RecyclerView.ViewHolder(view) {
+    private val title: TextView = view.findViewById(R.id.channel_title)
+    private var seriesId: Int = 0
+    private var season: Int = 0
+
+    init {
+        view.setOnClickListener {
+            onSeasonClick(seriesId, season)
+            view.requestFocus()
+        }
+    }
+
+    fun bind(item: ListItem.SeasonItem) {
+        seriesId = item.seriesId
+        season = item.season_num
+        title.text = "Season ${item.season_num} (${item.episodeCount} episodes)"
+        title.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0)
+    }
+}
+
+private class EpisodeViewHolder(
+    view: View,
+    private val onEpisodeClick: (Int, Int, Episode) -> Unit
+) : RecyclerView.ViewHolder(view) {
+    private val title: TextView = view.findViewById(R.id.channel_title)
+    private var seriesId: Int = 0
+    private var season: Int = 0
+    private var episode: Episode? = null
+
+    init {
+        view.setOnClickListener {
+            episode?.let { onEpisodeClick(seriesId, season, it) }
+            view.requestFocus()
+        }
+    }
+
+    fun bind(item: ListItem.EpisodeItem) {
+        seriesId = item.seriesId
+        season = item.season
+        episode = item.episode
+        title.text = "Episode ${item.episode.episode_num}: ${item.episode.title}"
+        title.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0)
     }
 }
