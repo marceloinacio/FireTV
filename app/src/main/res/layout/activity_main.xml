@@ -164,6 +164,31 @@
                 android:contentDescription="@string/fullscreen"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:scaleType="centerInside" />
+
+            <LinearLayout
+                android:id="@+id/loading_container"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:background="#80000000"
+                android:visibility="gone">
+
+                <ProgressBar
+                    android:id="@+id/loading_progress"
+                    android:layout_width="80dp"
+                    android:layout_height="80dp"
+                    android:indeterminate="true" />
+
+                <TextView
+                    android:id="@+id/loading_text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="@string/loading"
+                    android:textColor="@color/text_primary"
+                    android:textSize="18sp" />
+            </LinearLayout>
         </FrameLayout>
 
         <TextView

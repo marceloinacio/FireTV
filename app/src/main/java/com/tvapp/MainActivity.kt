@@ -42,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var backButton: Button
     private lateinit var listTitle: TextView
     private lateinit var searchInput: EditText
+    private lateinit var loadingContainer: View
 
     private lateinit var leftPanel: View
     private lateinit var playerContainer: View
@@ -102,6 +103,7 @@ class MainActivity : AppCompatActivity() {
         listTitle = findViewById(R.id.list_title)
         searchInput = findViewById(R.id.search_input)
         fullscreenButton = findViewById(R.id.fullscreen_button)
+        loadingContainer = findViewById(R.id.loading_container)
 
         channelList.layoutManager = LinearLayoutManager(this)
         channelList.adapter = adapter
@@ -237,6 +239,7 @@ class MainActivity : AppCompatActivity() {
         this.baseUrl = url
         this.username = username
         this.password = password
+        showLoading()
         lifecycleScope.launch {
             val api = XtreamApi(url, username, password)
             val categories = withContext(Dispatchers.IO) { api.fetchCategories() }
@@ -246,6 +249,7 @@ class MainActivity : AppCompatActivity() {
             allStreams = streams
             seriesList = series
             groups = buildGroups(categories, streams, series)
+            hideLoading()
             showGroups()
         }
     }
@@ -442,6 +446,7 @@ class MainActivity : AppCompatActivity() {
         backButton.visibility = View.VISIBLE
         listTitle.text = series.name
         searchInput.text.clear()
+        showLoading()
         
         // Fetch series details with seasons and episodes
         lifecycleScope.launch {
@@ -461,6 +466,7 @@ class MainActivity : AppCompatActivity() {
                 // No seasons found
                 adapter.submit(emptyList())
             }
+            hideLoading()
         }
     }
 
@@ -498,6 +504,14 @@ class MainActivity : AppCompatActivity() {
         val streamUrl = "${normalized}/series/${username}/${password}/${episode.id}.${extension}"
         Log.d("MainActivity", "Playing series episode: $streamUrl")
         return streamUrl
+    }
+
+    private fun showLoading() {
+        loadingContainer.visibility = View.VISIBLE
+    }
+
+    private fun hideLoading() {
+        loadingContainer.visibility = View.GONE
     }
 
     private fun buildFavoritesGroup(): Group {
