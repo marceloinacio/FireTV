@@ -281,7 +281,13 @@ class MainActivity : AppCompatActivity() {
     ): String {
         val normalized = baseUrl.trimEnd('/')
         val extension = stream.container_extension?.ifBlank { "m3u8" } ?: "m3u8"
-        val streamUrl = "${normalized}/live/${username}/${password}/${stream.stream_id}.${extension}"
+        // Determine if it's a VOD, Series or live stream based on stream_type
+        val streamPath = when (stream.stream_type) {
+            "movie" -> "movie"
+            "series" -> "series"
+            else -> "live"
+        }
+        val streamUrl = "${normalized}/${streamPath}/${username}/${password}/${stream.stream_id}.${extension}"
         Log.d("MainActivity", "Playing stream: $streamUrl")
         return streamUrl
     }

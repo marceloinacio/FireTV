@@ -13,15 +13,35 @@ class XtreamApi(
     private val gson = Gson()
 
     suspend fun fetchCategories(): List<Category> {
-        val url = buildUrl("get_live_categories")
-        val json = request(url) ?: return emptyList()
-        return gson.fromJson(json, Array<Category>::class.java)?.toList() ?: emptyList()
+        val liveUrl = buildUrl("get_live_categories")
+        val liveJson = request(liveUrl) ?: ""
+        val liveCategories = gson.fromJson(liveJson, Array<Category>::class.java)?.toList() ?: emptyList()
+        
+        val vodUrl = buildUrl("get_vod_categories")
+        val vodJson = request(vodUrl) ?: ""
+        val vodCategories = gson.fromJson(vodJson, Array<Category>::class.java)?.toList() ?: emptyList()
+        
+        val seriesUrl = buildUrl("get_series_categories")
+        val seriesJson = request(seriesUrl) ?: ""
+        val seriesCategories = gson.fromJson(seriesJson, Array<Category>::class.java)?.toList() ?: emptyList()
+        
+        return (liveCategories + vodCategories + seriesCategories).distinctBy { it.category_id }
     }
 
     suspend fun fetchStreams(): List<Stream> {
-        val url = buildUrl("get_live_streams")
-        val json = request(url) ?: return emptyList()
-        return gson.fromJson(json, Array<Stream>::class.java)?.toList() ?: emptyList()
+        val liveUrl = buildUrl("get_live_streams")
+        val liveJson = request(liveUrl) ?: ""
+        val liveStreams = gson.fromJson(liveJson, Array<Stream>::class.java)?.toList() ?: emptyList()
+        
+        val vodUrl = buildUrl("get_vod_streams")
+        val vodJson = request(vodUrl) ?: ""
+        val vodStreams = gson.fromJson(vodJson, Array<Stream>::class.java)?.toList() ?: emptyList()
+        
+        val seriesUrl = buildUrl("get_series")
+        val seriesJson = request(seriesUrl) ?: ""
+        val seriesStreams = gson.fromJson(seriesJson, Array<Stream>::class.java)?.toList() ?: emptyList()
+        
+        return liveStreams + vodStreams + seriesStreams
     }
 
     private fun buildUrl(action: String): String {
