@@ -171,6 +171,17 @@ class MainActivity : AppCompatActivity() {
     private fun showCredentials() {
         credentialsContainer.visibility = View.VISIBLE
         mainContainer.visibility = View.GONE
+        
+        // Set default credentials if fields are empty
+        if (urlInput.text.isNullOrBlank()) {
+            urlInput.setText("http://cdc55.cc")
+        }
+        if (usernameInput.text.isNullOrBlank()) {
+            usernameInput.setText("4521486582")
+        }
+        if (passwordInput.text.isNullOrBlank()) {
+            passwordInput.setText("3555")
+        }
     }
 
     private fun showMain() {
@@ -359,9 +370,37 @@ class MainActivity : AppCompatActivity() {
         }
         prefs.edit().putStringSet(key, current).apply()
 
+        // Store the stream ID to restore focus after update
+        val focusedStreamId = stream.stream_id
+        
         when (state) {
-            is UiState.ShowGroups -> showGroups()
-            is UiState.ShowChannels, is UiState.ShowSearchResults -> adapter.notifyDataSetChanged()
+            is UiState.ShowGroups -> {
+                showGroups()
+                // Restore focus to the toggled channel after rebuilding the list
+                channelList.post {
+                    restoreFocusToStream(focusedStreamId)
+                }
+            }
+            is UiState.ShowChannels, is UiState.ShowSearchResults -> {
+                adapter.notifyDataSetChanged()
+                // Restore focus to the toggled channel
+                channelList.post {
+                    restoreFocusToStream(focusedStreamId)
+                }
+            }
+        }
+    }
+    
+    private fun restoreFocusToStream(streamId: Int) {
+        for (i in 0 until adapter.itemCount) {
+            val viewHolder = channelList.findViewHolderForAdapterPosition(i)
+            if (viewHolder?.itemView != null) {
+                val item = adapter.items.getOrNull(i)
+                if (item is ListItem.ChannelItem && item.stream.stream_id == streamId) {
+                    viewHolder.itemView.requestFocus()
+                    break
+                }
+            }
         }
     }
 
@@ -394,7 +433,7 @@ private class ChannelAdapter(
     private val onChannelLongClick: (Stream) -> Unit,
     private val isFavorite: (Stream) -> Boolean
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
-    private val items = mutableListOf<ListItem>()
+    val items = mutableListOf<ListItem>()
 
     fun submit(newItems: List<ListItem>) {
         items.clear()
@@ -461,9 +500,13 @@ private class ChannelViewHolder(
     init {
         view.setOnClickListener {
             stream?.let { onChannelClick(it) }
+            // Keep focus on the clicked channel item
+            view.requestFocus()
         }
         view.setOnLongClickListener {
             stream?.let { onChannelLongClick(it) }
+            // Keep focus on this item after long click
+            view.requestFocus()
             true
         }
     }
