@@ -11,6 +11,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageButton
 import android.widget.TextView
 import androidx.activity.addCallback
 import androidx.appcompat.app.AppCompatActivity
@@ -49,14 +50,16 @@ class MainActivity : AppCompatActivity() {
 
     private var player: ExoPlayer? = null
     private var isFullscreen = false
-    private var lastClickMs = 0L
     private var state: UiState = UiState.ShowGroups
     private var groups: List<Group> = emptyList()
+    private var allStreams: List<Stream> = emptyList()
+    private lateinit var fullscreenButton: ImageButton
 
     private val adapter = ChannelAdapter(
         onChannelClick = { stream -> startPlayback(stream) },
-        onChannelDoubleClick = { toggleFullscreen() },
-        onGroupClick = { group -> showChannelsIn(group) }
+        onGroupClick = { group -> showChannelsIn(group) },
+        onChannelLongClick = { stream -> toggleFavorite(stream) },
+        isFavorite = { stream -> getFavoriteIds().contains(stream.stream_id) }
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -86,12 +89,14 @@ class MainActivity : AppCompatActivity() {
         backButton = findViewById(R.id.back_button)
         listTitle = findViewById(R.id.list_title)
         searchInput = findViewById(R.id.search_input)
+        fullscreenButton = findViewById(R.id.fullscreen_button)
 
         channelList.layoutManager = LinearLayoutManager(this)
         channelList.adapter = adapter
 
         player = ExoPlayer.Builder(this).build().also { playerView.player = it }
         backButton.setOnClickListener { showGroups() }
+        fullscreenButton.setOnClickListener { toggleFullscreen() }
         searchInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
 
@@ -204,6 +209,7 @@ class MainActivity : AppCompatActivity() {
             val categories = withContext(Dispatchers.IO) { api.fetchCategories() }
             val streams = withContext(Dispatchers.IO) { api.fetchStreams() }
 
+            allStreams = streams
             groups = buildGroups(categories, streams)
             showGroups()
         }
@@ -237,6 +243,7 @@ class MainActivity : AppCompatActivity() {
             showCredentials()
             return
         }
+        saveRecent(stream)
         val streamUrl = buildStreamUrl(url, username, password, stream)
         nowPlaying.text = "Now Playing: ${stream.name}"
         val mediaItem = MediaItem.fromUri(streamUrl)
@@ -271,7 +278,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun showGroups() {
         state = UiState.ShowGroups
-        adapter.submit(ListItem.from(groups))
+        val recentsGroup = buildRecentsGroup()
+        val favoritesGroup = buildFavoritesGroup()
+        val displayGroups = listOfNotNull(recentsGroup, favoritesGroup) + groups
+        adapter.submit(ListItem.from(displayGroups))
         backButton.visibility = View.GONE
         listTitle.setText(R.string.channels_title)
         searchInput.text.clear()
@@ -297,6 +307,68 @@ class MainActivity : AppCompatActivity() {
         listTitle.setText(R.string.search_results_title)
         backButton.visibility = View.VISIBLE
     }
+
+    private fun saveRecent(stream: Stream) {
+        val key = "recent_stream_ids"
+        val existing = prefs.getString(key, "").orEmpty()
+        val ids = existing.split(",")
+            .filter { it.isNotBlank() }
+            .mapNotNull { it.toIntOrNull() }
+            .toMutableList()
+        ids.remove(stream.stream_id)
+        ids.add(0, stream.stream_id)
+        while (ids.size > 20) ids.removeLast()
+        val serialized = ids.joinToString(",")
+        prefs.edit().putString(key, serialized).apply()
+        if (state is UiState.ShowGroups) {
+            showGroups()
+        }
+    }
+
+    private fun getRecentIds(): List<Int> {
+        val existing = prefs.getString("recent_stream_ids", "").orEmpty()
+        return existing.split(",")
+            .filter { it.isNotBlank() }
+            .mapNotNull { it.toIntOrNull() }
+    }
+
+    private fun getFavoriteIds(): Set<Int> {
+        val set = prefs.getStringSet("favorite_stream_ids", emptySet()) ?: emptySet()
+        return set.mapNotNull { it.toIntOrNull() }.toSet()
+    }
+
+    private fun toggleFavorite(stream: Stream) {
+        val key = "favorite_stream_ids"
+        val current = prefs.getStringSet(key, emptySet())?.toMutableSet() ?: mutableSetOf()
+        val idStr = stream.stream_id.toString()
+        if (current.contains(idStr)) {
+            current.remove(idStr)
+        } else {
+            current.add(idStr)
+        }
+        prefs.edit().putStringSet(key, current).apply()
+
+        when (state) {
+            is UiState.ShowGroups -> showGroups()
+            is UiState.ShowChannels, is UiState.ShowSearchResults -> adapter.notifyDataSetChanged()
+        }
+    }
+
+    private fun buildFavoritesGroup(): Group {
+        val favorites = getFavoriteIds()
+        val favStreams = allStreams.filter { favorites.contains(it.stream_id) }
+            .sortedBy { it.name.lowercase() }
+        return Group("Favorites", favStreams)
+    }
+
+    private fun buildRecentsGroup(): Group? {
+        val recents = getRecentIds()
+        if (recents.isEmpty()) return null
+        val streamsById = allStreams.associateBy { it.stream_id }
+        val ordered = recents.mapNotNull { streamsById[it] }
+        if (ordered.isEmpty()) return null
+        return Group("Recent", ordered)
+    }
 }
 
 private sealed class UiState {
@@ -307,8 +379,9 @@ private sealed class UiState {
 
 private class ChannelAdapter(
     private val onChannelClick: (Stream) -> Unit,
-    private val onChannelDoubleClick: () -> Unit,
-    private val onGroupClick: (Group) -> Unit
+    private val onGroupClick: (Group) -> Unit,
+    private val onChannelLongClick: (Stream) -> Unit,
+    private val isFavorite: (Stream) -> Boolean
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     private val items = mutableListOf<ListItem>()
 
@@ -332,7 +405,7 @@ private class ChannelAdapter(
             GroupViewHolder(view, onGroupClick)
         } else {
             val view = inflater.inflate(R.layout.item_channel, parent, false)
-            ChannelViewHolder(view, onChannelClick, onChannelDoubleClick)
+            ChannelViewHolder(view, onChannelClick, onChannelLongClick, isFavorite)
         }
     }
 
@@ -368,26 +441,27 @@ private class GroupViewHolder(
 private class ChannelViewHolder(
     view: View,
     private val onChannelClick: (Stream) -> Unit,
-    private val onChannelDoubleClick: () -> Unit
+    private val onChannelLongClick: (Stream) -> Unit,
+    private val isFavorite: (Stream) -> Boolean
 ) : RecyclerView.ViewHolder(view) {
     private val title: TextView = view.findViewById(R.id.channel_title)
     private var stream: Stream? = null
-    private var lastClickMs = 0L
 
     init {
         view.setOnClickListener {
-            val now = System.currentTimeMillis()
-            if (now - lastClickMs < 300) {
-                onChannelDoubleClick()
-            } else {
-                stream?.let { onChannelClick(it) }
-            }
-            lastClickMs = now
+            stream?.let { onChannelClick(it) }
+        }
+        view.setOnLongClickListener {
+            stream?.let { onChannelLongClick(it) }
+            true
         }
     }
 
     fun bind(item: ListItem.ChannelItem) {
         stream = item.stream
         title.text = item.stream.name
+        val fav = isFavorite(item.stream)
+        val endDrawable = if (fav) R.drawable.ic_star_24 else 0
+        title.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, endDrawable, 0)
     }
 }
