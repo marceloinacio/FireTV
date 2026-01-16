@@ -476,7 +476,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun playEpisode(seriesId: Int, season: Int, episode: Episode) {
-        val episodeUrl = buildSeriesUrl(baseUrl, username, password, seriesId, season, episode.episode_num)
+        val episodeUrl = buildSeriesUrl(baseUrl, username, password, episode)
         nowPlaying.text = "Now Playing: ${episode.title}"
         val mediaItem = MediaItem.fromUri(episodeUrl)
         player?.apply {
@@ -491,13 +491,12 @@ class MainActivity : AppCompatActivity() {
         baseUrl: String,
         username: String,
         password: String,
-        seriesId: Int,
-        season: Int,
-        episode: Int
+        episode: Episode
     ): String {
         val normalized = baseUrl.trimEnd('/')
-        val streamUrl = "${normalized}/series/${username}/${password}/${seriesId}/${season}/${episode}.mkv"
-        Log.d("MainActivity", "Playing series: $streamUrl")
+        val extension = episode.container_extension?.ifBlank { "mkv" } ?: "mkv"
+        val streamUrl = "${normalized}/series/${username}/${password}/${episode.id}.${extension}"
+        Log.d("MainActivity", "Playing series episode: $streamUrl")
         return streamUrl
     }
 

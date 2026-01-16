@@ -76,9 +76,18 @@ class XtreamApi(
                 
                 episodesArray.forEach { episodeElement ->
                     val episodeObj = episodeElement.asJsonObject
+                    // Try to get id as string first, then as int
+                    val id = episodeObj.get("id")?.let { 
+                        if (it.isJsonPrimitive && it.asJsonPrimitive.isNumber) {
+                            it.asInt.toString()
+                        } else {
+                            it.asString
+                        }
+                    } ?: return@forEach
                     val episodeNum = episodeObj.get("episode_num")?.asInt ?: return@forEach
                     val episodeTitle = episodeObj.get("title")?.asString ?: "Episode $episodeNum"
-                    episodes.add(Episode(episodeNum, episodeTitle, seasonNum))
+                    val containerExtension = episodeObj.get("container_extension")?.asString
+                    episodes.add(Episode(id, episodeNum, episodeTitle, seasonNum, containerExtension))
                 }
                 
                 if (episodes.isNotEmpty()) {
