@@ -64,6 +64,7 @@ class MainActivity : AppCompatActivity() {
     private var epgRepo: EpgRepository? = null
     private var hasEpgData = false
     private var isFullscreen = false
+    private var defaultPlayerHeight: Int = 0
     private var currentStream: Stream? = null
     private var state: UiState = UiState.ShowGroups
     private var groups: List<Group> = emptyList()
@@ -122,6 +123,7 @@ class MainActivity : AppCompatActivity() {
         searchInput = findViewById(R.id.search_input)
         fullscreenButton = findViewById(R.id.fullscreen_button)
         loadingContainer = findViewById(R.id.loading_container)
+        defaultPlayerHeight = playerView.layoutParams.height
 
         channelList.layoutManager = LinearLayoutManager(this)
         channelList.adapter = adapter
@@ -145,7 +147,10 @@ class MainActivity : AppCompatActivity() {
             clone(mainContainer)
             setVisibility(R.id.left_panel, View.GONE)
             setVisibility(R.id.now_playing, View.GONE)
+            setVisibility(R.id.epg_container, View.GONE)
             clear(R.id.player_container)
+            constrainWidth(R.id.player_container, ConstraintSet.MATCH_CONSTRAINT)
+            constrainHeight(R.id.player_container, ConstraintSet.MATCH_CONSTRAINT)
             connect(R.id.player_container, ConstraintSet.TOP, ConstraintSet.PARENT_ID, ConstraintSet.TOP)
             connect(R.id.player_container, ConstraintSet.BOTTOM, ConstraintSet.PARENT_ID, ConstraintSet.BOTTOM)
             connect(R.id.player_container, ConstraintSet.START, ConstraintSet.PARENT_ID, ConstraintSet.START)
@@ -437,9 +442,13 @@ class MainActivity : AppCompatActivity() {
         if (isFullscreen) {
             fullscreenButton.visibility = View.GONE
             playerView.useController = false
+            playerView.layoutParams = playerView.layoutParams.apply { height = ViewGroup.LayoutParams.MATCH_PARENT }
+            playerView.requestLayout()
             fullConstraints.applyTo(mainContainer)
         } else {
             fullscreenButton.visibility = View.VISIBLE
+            playerView.layoutParams = playerView.layoutParams.apply { height = defaultPlayerHeight }
+            playerView.requestLayout()
             normalConstraints.applyTo(mainContainer)
         }
         updateEpgVisibility()
