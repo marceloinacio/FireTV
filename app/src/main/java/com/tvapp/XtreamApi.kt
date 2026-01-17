@@ -101,6 +101,27 @@ class XtreamApi(
         }
     }
 
+    suspend fun fetchShortEpg(streamId: Int, limit: Int = 1): List<EpgEntry> {
+        val epgUrl = buildUrl("get_short_epg") + "&stream_id=${streamId}&limit=${limit}"
+        val epgJson = request(epgUrl) ?: return emptyList()
+
+        return try {
+            val epgObj = gson.fromJson(epgJson, JsonObject::class.java)
+            val listings = epgObj?.getAsJsonArray("epg_listings") ?: return emptyList()
+
+            listings.mapNotNull { element ->
+                val item = element.asJsonObject
+                val title = item.get("title")?.asString ?: return@mapNotNull null
+                val description = item.get("description")?.asString
+                val startTs = runCatching { item.get("start_timestamp")?.asLong }.getOrNull() ?: 0L
+                val endTs = runCatching { item.get("stop_timestamp")?.asLong }.getOrNull() ?: 0L
+                EpgEntry(title, description, startTs, endTs)
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
     private fun buildUrl(action: String): String {
         val normalized = baseUrl.trimEnd('/')
         return "${normalized}/player_api.php?username=${username}&password=${password}&action=${action}"

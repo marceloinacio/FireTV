@@ -154,6 +154,43 @@
                 android:focusableInTouchMode="true"
                 android:background="@drawable/player_focus_border" />
 
+            <LinearLayout
+                android:id="@+id/epg_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top"
+                android:orientation="vertical"
+                android:padding="12dp"
+                android:background="#B3000000"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/epg_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/text_primary"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/epg_time"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:id="@+id/epg_description"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:maxLines="3"
+                    android:ellipsize="end"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
             <ImageButton
                 android:id="@+id/fullscreen_button"
                 android:layout_width="48dp"

@@ -28,6 +28,21 @@ data class Episode(
     val container_extension: String?
 )
 
+data class EpgEntry(
+    val title: String,
+    val description: String?,
+    val startTimestamp: Long,
+    val endTimestamp: Long
+)
+
+data class EpgProgram(
+    val channelId: String,
+    val title: String,
+    val description: String?,
+    val startTimestamp: Long,
+    val endTimestamp: Long
+)
+
 data class Season(
     val season_num: Int,
     val episodes: List<Episode>

@@ -24,9 +24,14 @@ import androidx.media3.ui.PlayerView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.textfield.TextInputEditText
+import com.tvapp.EpgRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
     private lateinit var prefs: SharedPreferences
@@ -46,11 +51,20 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var leftPanel: View
     private lateinit var playerContainer: View
+    private lateinit var epgContainer: View
+    private lateinit var epgTitle: TextView
+    private lateinit var epgTime: TextView
+    private lateinit var epgDescription: TextView
     private lateinit var normalConstraints: ConstraintSet
     private lateinit var fullConstraints: ConstraintSet
 
     private var player: ExoPlayer? = null
+    private var epgJob: Job? = null
+    private var epgLoadJob: Job? = null
+    private var epgRepo: EpgRepository? = null
+    private var hasEpgData = false
     private var isFullscreen = false
+    private var currentStream: Stream? = null
     private var state: UiState = UiState.ShowGroups
     private var groups: List<Group> = emptyList()
     private var allStreams: List<Stream> = emptyList()
@@ -99,6 +113,10 @@ class MainActivity : AppCompatActivity() {
         playerView = findViewById(R.id.player_view)
         leftPanel = findViewById(R.id.left_panel)
         playerContainer = findViewById(R.id.player_container)
+        epgContainer = findViewById(R.id.epg_container)
+        epgTitle = findViewById(R.id.epg_title)
+        epgTime = findViewById(R.id.epg_time)
+        epgDescription = findViewById(R.id.epg_description)
         backButton = findViewById(R.id.back_button)
         listTitle = findViewById(R.id.list_title)
         searchInput = findViewById(R.id.search_input)
@@ -161,6 +179,8 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         player?.release()
         player = null
+        epgJob?.cancel()
+        epgLoadJob?.cancel()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
@@ -239,6 +259,7 @@ class MainActivity : AppCompatActivity() {
         this.baseUrl = url
         this.username = username
         this.password = password
+        loadEpgXml(url, username, password)
         showLoading()
         lifecycleScope.launch {
             val api = XtreamApi(url, username, password)
@@ -251,6 +272,17 @@ class MainActivity : AppCompatActivity() {
             groups = buildGroups(categories, streams, series)
             hideLoading()
             showGroups()
+
+            currentStream?.let { active ->
+                // Refresh EPG using the latest credentials and data
+                val matched = allStreams.find { it.stream_id == active.stream_id }
+                if (matched != null) {
+                    loadEpg(matched)
+                } else {
+                    hasEpgData = false
+                    updateEpgVisibility()
+                }
+            }
         }
     }
 
@@ -283,6 +315,7 @@ class MainActivity : AppCompatActivity() {
             showCredentials()
             return
         }
+        currentStream = stream
         saveRecent(stream)
         val streamUrl = buildStreamUrl(url, username, password, stream)
         nowPlaying.text = "Now Playing: ${stream.name}"
@@ -293,6 +326,7 @@ class MainActivity : AppCompatActivity() {
             playWhenReady = true
         }
         playerView.useController = false
+        loadEpg(stream)
     }
 
     private fun buildStreamUrl(
@@ -314,6 +348,90 @@ class MainActivity : AppCompatActivity() {
         return streamUrl
     }
 
+    private fun buildEpgUrl(baseUrl: String, username: String, password: String): String {
+        val normalized = baseUrl.trimEnd('/')
+        return "${normalized}/epg.php?username=${username}&password=${password}"
+    }
+
+    private fun loadEpgXml(baseUrl: String, username: String, password: String) {
+        if (baseUrl.isBlank() || username.isBlank() || password.isBlank()) return
+        val epgUrl = buildEpgUrl(baseUrl, username, password)
+        epgLoadJob?.cancel()
+        epgRepo = null
+        epgLoadJob = lifecycleScope.launch {
+            try {
+                val repo = withContext(Dispatchers.IO) {
+                    EpgRepository().apply { load(epgUrl) }
+                }
+                epgRepo = repo
+            } finally {
+                epgLoadJob = null
+                currentStream?.let { loadEpg(it) }
+            }
+        }
+    }
+
+    private fun loadEpg(stream: Stream) {
+        epgJob?.cancel()
+        hasEpgData = false
+
+        if (stream.stream_type != null && stream.stream_type != "live") {
+            epgTitle.text = getString(R.string.epg_not_available)
+            epgTime.text = ""
+            epgDescription.text = getString(R.string.epg_description_not_available)
+            updateEpgVisibility()
+            return
+        }
+
+        if (epgRepo == null) {
+            if (epgLoadJob == null) {
+                loadEpgXml(baseUrl, username, password)
+            }
+            epgTitle.text = getString(R.string.epg_loading)
+            epgTime.text = ""
+            epgDescription.text = ""
+            updateEpgVisibility()
+            return
+        }
+
+        epgTitle.text = getString(R.string.epg_loading)
+        epgTime.text = ""
+        epgDescription.text = ""
+        updateEpgVisibility()
+
+        epgJob = lifecycleScope.launch {
+            try {
+                val current = withContext(Dispatchers.Default) { epgRepo?.currentProgram(stream.name) }
+                if (current != null) {
+                    hasEpgData = true
+                    epgTitle.text = current.title
+                    epgTime.text = formatEpgTime(current.startTimestamp, current.endTimestamp)
+                    epgDescription.text = current.description?.ifBlank { getString(R.string.epg_description_not_available) }
+                        ?: getString(R.string.epg_description_not_available)
+                } else {
+                    hasEpgData = false
+                    epgTitle.text = getString(R.string.epg_not_available)
+                    epgTime.text = ""
+                    epgDescription.text = getString(R.string.epg_description_not_available)
+                }
+            } finally {
+                epgJob = null
+                updateEpgVisibility()
+            }
+        }
+    }
+
+    private fun updateEpgVisibility() {
+        val shouldShow = !isFullscreen && (hasEpgData || epgJob != null)
+        epgContainer.visibility = if (shouldShow) View.VISIBLE else View.GONE
+    }
+
+    private fun formatEpgTime(start: Long, end: Long): String {
+        if (start <= 0 || end <= 0) return ""
+        val formatter = SimpleDateFormat("HH:mm", Locale.getDefault())
+        return "${formatter.format(Date(start * 1000))} - ${formatter.format(Date(end * 1000))}"
+    }
+
     private fun toggleFullscreen() {
         isFullscreen = !isFullscreen
         if (isFullscreen) {
@@ -324,6 +442,7 @@ class MainActivity : AppCompatActivity() {
             fullscreenButton.visibility = View.VISIBLE
             normalConstraints.applyTo(mainContainer)
         }
+        updateEpgVisibility()
     }
 
     private fun showGroups() {

@@ -11,4 +11,7 @@
     <string name="search_results_title">Search Results</string>
     <string name="fullscreen">Fullscreen</string>
     <string name="loading">Loading...</string>
+    <string name="epg_loading">Loading guide...</string>
+    <string name="epg_not_available">EPG not available</string>
+    <string name="epg_description_not_available">Description not available</string>
 </resources>
