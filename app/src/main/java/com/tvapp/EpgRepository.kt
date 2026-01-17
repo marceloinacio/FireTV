@@ -4,9 +4,7 @@ import android.util.Xml
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.xmlpull.v1.XmlPullParser
-import java.io.ByteArrayInputStream
 import java.io.InputStreamReader
-import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
 import java.text.Normalizer
 import java.util.Locale
@@ -21,23 +19,9 @@ class EpgRepository(
         val request = Request.Builder().url(url).build()
         client.newCall(request).execute().use { response ->
             val body = response.body ?: return
-            val bytes = body.bytes()
-
-            val preferred = body.contentType()?.charset(StandardCharsets.UTF_8) ?: StandardCharsets.UTF_8
-            val charset = pickCharset(bytes, preferred)
-
-            InputStreamReader(ByteArrayInputStream(bytes), charset).use { reader ->
+            InputStreamReader(body.byteStream(), StandardCharsets.UTF_8).use { reader ->
                 parse(reader)
             }
-        }
-    }
-
-    private fun pickCharset(bytes: ByteArray, preferred: Charset): Charset {
-        // Try the server-declared/UTF-8 first; fall back to ISO-8859-1 if decoding fails
-        return if (runCatching { String(bytes, preferred) }.isSuccess) {
-            preferred
-        } else {
-            StandardCharsets.ISO_8859_1
         }
     }
 
