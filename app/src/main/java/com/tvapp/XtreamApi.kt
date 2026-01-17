@@ -4,6 +4,8 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.nio.charset.Charset
+import java.nio.charset.StandardCharsets
 
 class XtreamApi(
     private val baseUrl: String,
@@ -139,7 +141,21 @@ class XtreamApi(
             if (!response.isSuccessful) {
                 return null
             }
-            return response.body?.string()
+
+            val body = response.body ?: return null
+            val bytes = body.bytes()
+            val preferred = body.contentType()?.charset(StandardCharsets.UTF_8) ?: StandardCharsets.UTF_8
+            val charset = pickCharset(bytes, preferred)
+            return String(bytes, charset)
+        }
+    }
+
+    private fun pickCharset(bytes: ByteArray, preferred: Charset): Charset {
+        // Try server-declared/UTF-8 first; fallback to ISO-8859-1 only if decode fails
+        return if (runCatching { String(bytes, preferred) }.isSuccess) {
+            preferred
+        } else {
+            StandardCharsets.ISO_8859_1
         }
     }
 }
