@@ -87,7 +87,13 @@ class XtreamApi(
                     val episodeNum = episodeObj.get("episode_num")?.asInt ?: return@forEach
                     val episodeTitle = episodeObj.get("title")?.asString ?: "Episode $episodeNum"
                     val containerExtension = episodeObj.get("container_extension")?.asString
-                    episodes.add(Episode(id, episodeNum, episodeTitle, seasonNum, containerExtension))
+                    val infoObj = runCatching { episodeObj.getAsJsonObject("info") }.getOrNull()
+                    val description = runCatching { infoObj?.get("plot")?.asString }.getOrNull()
+                        ?: runCatching { infoObj?.get("description")?.asString }.getOrNull()
+                        ?: runCatching { episodeObj.get("plot")?.asString }.getOrNull()
+                        ?: runCatching { episodeObj.get("description")?.asString }.getOrNull()
+
+                    episodes.add(Episode(id, episodeNum, episodeTitle, seasonNum, containerExtension, description))
                 }
                 
                 if (episodes.isNotEmpty()) {

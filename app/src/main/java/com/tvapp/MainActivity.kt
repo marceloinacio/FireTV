@@ -63,6 +63,7 @@ class MainActivity : AppCompatActivity() {
     private var epgLoadJob: Job? = null
     private var epgRepo: EpgRepository? = null
     private var hasEpgData = false
+    private var isEpisodeEpgActive = false
     private var isFullscreen = false
     private var defaultPlayerHeight: Int = 0
     private var currentStream: Stream? = null
@@ -81,6 +82,7 @@ class MainActivity : AppCompatActivity() {
         onSeriesClick = { series -> showSeriesSeasons(series) },
         onSeasonClick = { seriesId, season -> showSeasonEpisodes(seriesId, season) },
         onEpisodeClick = { seriesId, season, episode -> playEpisode(seriesId, season, episode) },
+        onEpisodeFocus = { episode -> showEpisodeResume(episode) },
         onChannelLongClick = { stream -> toggleFavorite(stream) },
         isFavorite = { stream -> getFavoriteIds().contains(stream.stream_id) }
     )
@@ -320,6 +322,7 @@ class MainActivity : AppCompatActivity() {
             showCredentials()
             return
         }
+        isEpisodeEpgActive = false
         currentStream = stream
         saveRecent(stream)
         val streamUrl = buildStreamUrl(url, username, password, stream)
@@ -377,6 +380,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadEpg(stream: Stream) {
+        if (isEpisodeEpgActive && state is UiState.ShowSeasonEpisodes) {
+            updateEpgVisibility()
+            return
+        }
+
+        isEpisodeEpgActive = false
         epgJob?.cancel()
         hasEpgData = false
 
@@ -426,8 +435,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun showEpisodeResume(episode: Episode) {
+        isEpisodeEpgActive = true
+        epgJob?.cancel()
+
+        val displayTitle = episode.title.ifBlank { "Episode ${episode.episode_num}" }
+        epgTitle.text = displayTitle
+        epgTime.text = "Season ${episode.season} - Episode ${episode.episode_num}"
+        val description = episode.description?.takeIf { it.isNotBlank() }
+            ?: getString(R.string.epg_description_not_available)
+        epgDescription.text = description
+
+        updateEpgVisibility()
+    }
+
     private fun updateEpgVisibility() {
-        val shouldShow = !isFullscreen && (hasEpgData || epgJob != null)
+        val shouldShow = !isFullscreen && (hasEpgData || epgJob != null || isEpisodeEpgActive)
         epgContainer.visibility = if (shouldShow) View.VISIBLE else View.GONE
     }
 
@@ -455,6 +478,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showGroups() {
+        isEpisodeEpgActive = false
         state = UiState.ShowGroups
         val recentsGroup = buildRecentsGroup()
         val favoritesGroup = buildFavoritesGroup()
@@ -469,14 +493,17 @@ class MainActivity : AppCompatActivity() {
         backButton.visibility = View.GONE
         listTitle.setText(R.string.channels_title)
         searchInput.text.clear()
+        updateEpgVisibility()
     }
 
     private fun showChannelsIn(group: Group) {
+        isEpisodeEpgActive = false
         state = UiState.ShowChannels(group)
         adapter.submit(ListItem.from(group))
         backButton.visibility = View.VISIBLE
         listTitle.text = group.name
         searchInput.text.clear()
+        updateEpgVisibility()
     }
 
     private fun filter(query: String) {
@@ -485,6 +512,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        isEpisodeEpgActive = false
         state = UiState.ShowSearchResults
        
         // Search through all channels (live, movies/VOD)
@@ -500,6 +528,7 @@ class MainActivity : AppCompatActivity() {
         adapter.submit(allResults)
         listTitle.setText(R.string.search_results_title)
         backButton.visibility = View.VISIBLE
+        updateEpgVisibility()
     }
 
     private fun saveRecent(stream: Stream) {
@@ -580,11 +609,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSeriesSeasons(series: SeriesInfo) {
+        isEpisodeEpgActive = false
         state = UiState.ShowSeriesSeasons(series.series_id)
         backButton.visibility = View.VISIBLE
         listTitle.text = series.name
         searchInput.text.clear()
         showLoading()
+        updateEpgVisibility()
         
         // Fetch series details with seasons and episodes
         lifecycleScope.launch {
@@ -611,12 +642,15 @@ class MainActivity : AppCompatActivity() {
     private fun showSeasonEpisodes(seriesId: Int, season: Int) {
         val series = seriesList.find { it.series_id == seriesId } ?: return
         val episodes = series.seasons[season] ?: return
+        isEpisodeEpgActive = false
         state = UiState.ShowSeasonEpisodes(seriesId, season)
         val episodeItems = ListItem.fromSeasonEpisodes(seriesId, season, episodes)
         adapter.submit(episodeItems)
         backButton.visibility = View.VISIBLE
         listTitle.text = "${series.name} - Season $season"
         searchInput.text.clear()
+
+        episodes.firstOrNull()?.let { showEpisodeResume(it) }
     }
 
     private fun playEpisode(seriesId: Int, season: Int, episode: Episode) {
@@ -629,6 +663,7 @@ class MainActivity : AppCompatActivity() {
             playWhenReady = true
         }
         playerView.useController = false
+        showEpisodeResume(episode)
     }
 
     private fun buildSeriesUrl(
@@ -683,6 +718,7 @@ private class ChannelAdapter(
     private val onSeriesClick: (SeriesInfo) -> Unit,
     private val onSeasonClick: (Int, Int) -> Unit,
     private val onEpisodeClick: (Int, Int, Episode) -> Unit,
+    private val onEpisodeFocus: (Episode) -> Unit,
     private val onChannelLongClick: (Stream) -> Unit,
     private val isFavorite: (Stream) -> Boolean
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
@@ -725,7 +761,7 @@ private class ChannelAdapter(
             }
             else -> {
                 val view = inflater.inflate(R.layout.item_channel, parent, false)
-                EpisodeViewHolder(view, onEpisodeClick)
+                EpisodeViewHolder(view, onEpisodeClick, onEpisodeFocus)
             }
         }
     }
@@ -838,7 +874,8 @@ private class SeasonViewHolder(
 
 private class EpisodeViewHolder(
     view: View,
-    private val onEpisodeClick: (Int, Int, Episode) -> Unit
+    private val onEpisodeClick: (Int, Int, Episode) -> Unit,
+    private val onEpisodeFocus: (Episode) -> Unit
 ) : RecyclerView.ViewHolder(view) {
     private val title: TextView = view.findViewById(R.id.channel_title)
     private var seriesId: Int = 0
@@ -850,6 +887,12 @@ private class EpisodeViewHolder(
             episode?.let { onEpisodeClick(seriesId, season, it) }
             view.requestFocus()
         }
+
+        view.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                episode?.let { onEpisodeFocus(it) }
+            }
+        }
     }
 
     fun bind(item: ListItem.EpisodeItem) {
@@ -858,5 +901,9 @@ private class EpisodeViewHolder(
         episode = item.episode
         title.text = "Episode ${item.episode.episode_num}: ${item.episode.title}"
         title.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0)
+
+        if (itemView.isFocused) {
+            episode?.let { onEpisodeFocus(it) }
+        }
     }
 }

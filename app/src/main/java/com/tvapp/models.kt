@@ -25,7 +25,8 @@ data class Episode(
     val episode_num: Int,
     val title: String,
     val season: Int,
-    val container_extension: String?
+    val container_extension: String?,
+    val description: String? = null
 )
 
 data class EpgEntry(
