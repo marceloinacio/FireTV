@@ -141,11 +141,7 @@ class XtreamApi(
                 return null
             }
             val body = response.body ?: return null
-            val rawBytes = body.bytes()  // RAW DATA (no charset applied)
-            //val strBody = String(rawBytes, Charset.forName("Windows-1252"))
-            //return strBody
-            return String(rawBytes, Charset.forName("ISO-8859-1"))
-            //return response.body?.string()
+            return response.body?.string()
         }
     }
 }
