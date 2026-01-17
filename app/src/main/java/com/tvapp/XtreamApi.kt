@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.nio.charset.Charset
 
 class XtreamApi(
     private val baseUrl: String,
@@ -139,7 +140,12 @@ class XtreamApi(
             if (!response.isSuccessful) {
                 return null
             }
-            return response.body?.string()
+            val body = response.body ?: return null
+            val rawBytes = body.bytes()  // RAW DATA (no charset applied)
+            //val strBody = String(rawBytes, Charset.forName("Windows-1252"))
+            //return strBody
+            return String(rawBytes, Charset.forName("ISO-8859-1"))
+            //return response.body?.string()
         }
     }
 }
