@@ -84,13 +84,6 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
-        <androidx.constraintlayout.widget.Guideline
-            android:id="@+id/player_guideline"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            app:layout_constraintGuide_percent="0.45" />
-
         <LinearLayout
             android:id="@+id/left_panel"
             android:layout_width="300dp"
@@ -138,58 +131,20 @@
         <FrameLayout
             android:id="@+id/player_container"
             android:layout_width="0dp"
-            android:layout_height="0dp"
+            android:layout_height="wrap_content"
             android:layout_margin="16dp"
             android:background="@color/dark_surface"
             app:layout_constraintTop_toTopOf="parent"
-            app:layout_constraintBottom_toTopOf="@id/player_guideline"
             app:layout_constraintStart_toEndOf="@id/left_panel"
             app:layout_constraintEnd_toEndOf="parent">
 
             <androidx.media3.ui.PlayerView
                 android:id="@+id/player_view"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
+                android:layout_height="360dp"
                 android:focusable="true"
                 android:focusableInTouchMode="true"
                 android:background="@drawable/player_focus_border" />
-
-            <LinearLayout
-                android:id="@+id/epg_container"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_gravity="top"
-                android:orientation="vertical"
-                android:padding="12dp"
-                android:background="#B3000000"
-                android:visibility="gone">
-
-                <TextView
-                    android:id="@+id/epg_title"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/epg_time"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="14sp" />
-
-                <TextView
-                    android:id="@+id/epg_description"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:maxLines="3"
-                    android:ellipsize="end"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="13sp" />
-            </LinearLayout>
 
             <ImageButton
                 android:id="@+id/fullscreen_button"
@@ -228,6 +183,47 @@
             </LinearLayout>
         </FrameLayout>
 
+        <LinearLayout
+            android:id="@+id/epg_container"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_margin="16dp"
+            android:layout_marginTop="0dp"
+            android:orientation="vertical"
+            android:padding="12dp"
+            android:background="@color/dark_surface"
+            android:visibility="gone"
+            app:layout_constraintTop_toBottomOf="@id/player_container"
+            app:layout_constraintStart_toEndOf="@id/left_panel"
+            app:layout_constraintEnd_toEndOf="parent">
+
+            <TextView
+                android:id="@+id/epg_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/epg_time"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="@color/text_secondary"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/epg_description"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:maxLines="3"
+                android:ellipsize="end"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+        </LinearLayout>
+
         <TextView
             android:id="@+id/now_playing"
             android:layout_width="0dp"
@@ -238,7 +234,7 @@
             android:text="@string/now_playing"
             android:textColor="@color/text_secondary"
             android:textSize="14sp"
-            app:layout_constraintTop_toBottomOf="@id/player_container"
+            app:layout_constraintTop_toBottomOf="@id/epg_container"
             app:layout_constraintStart_toEndOf="@id/left_panel"
             app:layout_constraintEnd_toEndOf="parent" />
     </androidx.constraintlayout.widget.ConstraintLayout>
