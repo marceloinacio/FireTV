@@ -99,7 +99,7 @@ class MainActivity : AppCompatActivity() {
 
     private val adapter = ChannelAdapter(
         onChannelClick = { stream -> startPlayback(stream) },
-        onGroupClick = { group -> showChannelsIn(group) },
+        onGroupClick = { group, position -> showChannelsIn(group, position) },
         onSeriesClick = { series -> showSeriesSeasons(series) },
         onSeasonClick = { seriesId, season -> showSeasonEpisodes(seriesId, season) },
         onEpisodeClick = { seriesId, season, episode -> playEpisode(seriesId, season, episode) },
@@ -107,6 +107,8 @@ class MainActivity : AppCompatActivity() {
         onChannelLongClick = { stream -> toggleFavorite(stream) },
         isFavorite = { stream -> getFavoriteIds().contains(stream.stream_id) }
     )
+
+    private var lastGroupPosition: Int? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -521,16 +523,19 @@ class MainActivity : AppCompatActivity() {
         allItems.addAll(ListItem.fromSeries(seriesList.sortedBy { it.name.lowercase() }))
         
         adapter.submit(allItems)
+        restoreGroupPosition()
         backButton.visibility = View.GONE
         listTitle.setText(R.string.channels_title)
         searchInput.text.clear()
         updateEpgVisibility()
     }
 
-    private fun showChannelsIn(group: Group) {
+    private fun showChannelsIn(group: Group, position: Int) {
         isEpisodeEpgActive = false
+        lastGroupPosition = position
         state = UiState.ShowChannels(group)
         adapter.submit(ListItem.from(group))
+        resetListPosition()
         backButton.visibility = View.VISIBLE
         listTitle.text = group.name
         searchInput.text.clear()
@@ -662,11 +667,37 @@ class MainActivity : AppCompatActivity() {
                 
                 val seasonItems = ListItem.fromSeriesSeasons(seriesDetails.series_id, seriesDetails.name, seriesDetails.seasons)
                 adapter.submit(seasonItems)
+                resetListPosition()
             } else {
                 // No seasons found
                 adapter.submit(emptyList())
+                resetListPosition()
             }
             hideLoading()
+        }
+    }
+
+    private fun resetListPosition() {
+        channelList.post {
+            if (adapter.itemCount == 0) return@post
+            channelList.scrollToPosition(0)
+            (channelList.layoutManager as? LinearLayoutManager)
+                ?.findViewByPosition(0)
+                ?.requestFocus()
+        }
+    }
+
+    private fun restoreGroupPosition() {
+        val position = lastGroupPosition ?: return
+        channelList.post {
+            val target = position.coerceIn(0, adapter.itemCount - 1)
+            val layoutManager = channelList.layoutManager as? LinearLayoutManager ?: return@post
+            layoutManager.scrollToPositionWithOffset(target, 0)
+
+            // Post once more to let layout settle before requesting focus
+            channelList.post {
+                layoutManager.findViewByPosition(target)?.requestFocus()
+            }
         }
     }
 
@@ -773,7 +804,7 @@ private sealed class UiState {
 
 private class ChannelAdapter(
     private val onChannelClick: (Stream) -> Unit,
-    private val onGroupClick: (Group) -> Unit,
+    private val onGroupClick: (Group, Int) -> Unit,
     private val onSeriesClick: (SeriesInfo) -> Unit,
     private val onSeasonClick: (Int, Int) -> Unit,
     private val onEpisodeClick: (Int, Int, Episode) -> Unit,
@@ -840,14 +871,17 @@ private class ChannelAdapter(
 
 private class GroupViewHolder(
     view: View,
-    private val onGroupClick: (Group) -> Unit
+    private val onGroupClick: (Group, Int) -> Unit
 ) : RecyclerView.ViewHolder(view) {
     private val title: TextView = view.findViewById(R.id.category_title)
     private var group: Group? = null
 
     init {
         view.setOnClickListener {
-            group?.let { onGroupClick(it) }
+            val position = bindingAdapterPosition
+            if (position != RecyclerView.NO_POSITION) {
+                group?.let { onGroupClick(it, position) }
+            }
         }
     }
 
