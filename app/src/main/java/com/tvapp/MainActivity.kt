@@ -19,6 +19,8 @@ import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.constraintlayout.widget.ConstraintSet
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -27,6 +29,8 @@ import com.google.android.material.textfield.TextInputEditText
 import com.tvapp.EpgRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -75,6 +79,23 @@ class MainActivity : AppCompatActivity() {
     private var baseUrl = ""
     private var username = ""
     private var password = ""
+    private var playbackRetryJob: Job? = null
+    private var consecutiveErrorCount = 0
+    private var lastPlaybackAction: (() -> Unit)? = null
+
+    private val playbackListener = object : Player.Listener {
+        override fun onPlayerError(error: PlaybackException) {
+            Log.w("MainActivity", "Playback error: ${error.errorCodeName} - ${error.message}")
+            consecutiveErrorCount++
+            schedulePlaybackRetry()
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_READY && player?.playWhenReady == true) {
+                resetRetryState()
+            }
+        }
+    }
 
     private val adapter = ChannelAdapter(
         onChannelClick = { stream -> startPlayback(stream) },
@@ -130,7 +151,10 @@ class MainActivity : AppCompatActivity() {
         channelList.layoutManager = LinearLayoutManager(this)
         channelList.adapter = adapter
 
-        player = ExoPlayer.Builder(this).build().also { playerView.player = it }
+        player = ExoPlayer.Builder(this).build().also {
+            it.addListener(playbackListener)
+            playerView.player = it
+        }
         backButton.setOnClickListener { showGroups() }
         fullscreenButton.setOnClickListener { toggleFullscreen() }
         playerView.setOnClickListener { toggleFullscreen() }
@@ -188,6 +212,7 @@ class MainActivity : AppCompatActivity() {
         player = null
         epgJob?.cancel()
         epgLoadJob?.cancel()
+        playbackRetryJob?.cancel()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
@@ -314,7 +339,12 @@ class MainActivity : AppCompatActivity() {
         return groups
     }
 
-    private fun startPlayback(stream: Stream) {
+    private fun startPlayback(stream: Stream, fromRetry: Boolean = false) {
+        if (fromRetry) {
+            playbackRetryJob?.cancel()
+        } else {
+            resetRetryState()
+        }
         val url = prefs.getString("url", "") ?: ""
         val username = prefs.getString("username", "") ?: ""
         val password = prefs.getString("password", "") ?: ""
@@ -322,6 +352,7 @@ class MainActivity : AppCompatActivity() {
             showCredentials()
             return
         }
+        lastPlaybackAction = { startPlayback(stream, fromRetry = true) }
         isEpisodeEpgActive = false
         currentStream = stream
         saveRecent(stream)
@@ -653,7 +684,13 @@ class MainActivity : AppCompatActivity() {
         episodes.firstOrNull()?.let { showEpisodeResume(it) }
     }
 
-    private fun playEpisode(seriesId: Int, season: Int, episode: Episode) {
+    private fun playEpisode(seriesId: Int, season: Int, episode: Episode, fromRetry: Boolean = false) {
+        if (fromRetry) {
+            playbackRetryJob?.cancel()
+        } else {
+            resetRetryState()
+        }
+        lastPlaybackAction = { playEpisode(seriesId, season, episode, fromRetry = true) }
         val episodeUrl = buildSeriesUrl(baseUrl, username, password, episode)
         nowPlaying.text = "Now Playing: ${episode.title}"
         val mediaItem = MediaItem.fromUri(episodeUrl)
@@ -664,6 +701,28 @@ class MainActivity : AppCompatActivity() {
         }
         playerView.useController = false
         showEpisodeResume(episode)
+    }
+
+    private fun schedulePlaybackRetry() {
+        val playbackAction = lastPlaybackAction ?: return
+        playbackRetryJob?.cancel()
+        val initialAttempt = consecutiveErrorCount.coerceAtLeast(1)
+        playbackRetryJob = lifecycleScope.launch {
+            var attempt = initialAttempt
+            while (isActive) {
+                val backoffMs = (2000L * attempt).coerceAtMost(10000L)
+                delay(backoffMs)
+                if (!isActive) break
+                playbackAction()
+                attempt++
+            }
+        }
+    }
+
+    private fun resetRetryState() {
+        consecutiveErrorCount = 0
+        playbackRetryJob?.cancel()
+        playbackRetryJob = null
     }
 
     private fun buildSeriesUrl(
