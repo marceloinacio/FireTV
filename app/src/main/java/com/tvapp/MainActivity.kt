@@ -9,6 +9,7 @@ import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
@@ -215,6 +216,7 @@ class MainActivity : AppCompatActivity() {
         epgJob?.cancel()
         epgLoadJob?.cancel()
         playbackRetryJob?.cancel()
+        setKeepScreenOn(false)
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
@@ -365,7 +367,9 @@ class MainActivity : AppCompatActivity() {
             setMediaItem(mediaItem)
             prepare()
             playWhenReady = true
+            play()
         }
+        setKeepScreenOn(true)
         playerView.useController = false
         loadEpg(stream)
     }
@@ -729,7 +733,9 @@ class MainActivity : AppCompatActivity() {
             setMediaItem(mediaItem)
             prepare()
             playWhenReady = true
+            play()
         }
+        setKeepScreenOn(true)
         playerView.useController = false
         showEpisodeResume(episode)
     }
@@ -744,6 +750,7 @@ class MainActivity : AppCompatActivity() {
                 val backoffMs = (2000L * attempt).coerceAtMost(10000L)
                 delay(backoffMs)
                 if (!isActive) break
+                clearPlayerBuffer()
                 playbackAction()
                 attempt++
             }
@@ -754,6 +761,23 @@ class MainActivity : AppCompatActivity() {
         consecutiveErrorCount = 0
         playbackRetryJob?.cancel()
         playbackRetryJob = null
+    }
+
+    private fun clearPlayerBuffer() {
+        // Stop and clear items to drop any bad buffer state before retrying
+        player?.apply {
+            stop()
+            clearMediaItems()
+            seekToDefaultPosition()
+        }
+    }
+
+    private fun setKeepScreenOn(enabled: Boolean) {
+        if (enabled) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     private fun buildSeriesUrl(
