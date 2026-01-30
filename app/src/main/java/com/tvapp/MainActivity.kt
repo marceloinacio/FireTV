@@ -350,7 +350,7 @@ class MainActivity : AppCompatActivity() {
                 continue
             }
             val channels = inCategory.sortedBy { it.name.lowercase() }
-            groups.add(Group(category.category_name, channels))
+            groups.add(Group(category.category_name, category.category_id, channels))
         }
         return groups
     }
@@ -361,6 +361,26 @@ class MainActivity : AppCompatActivity() {
         } else {
             resetRetryState()
         }
+        
+        // Check if parental control is enabled and this category is restricted
+        if (parentalControl.isEnabled() && parentalControl.isCategoryRestricted(stream.category_id)) {
+            if (!parentalControl.hasPINSet()) {
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.parental_control)
+                    .setMessage("Parental control is enabled but PIN is not set")
+                    .setPositiveButton("OK", null)
+                    .show()
+                return
+            }
+            // Show PIN dialog
+            showPINVerificationDialog(stream, fromRetry)
+            return
+        }
+        
+        proceedWithPlayback(stream, fromRetry)
+    }
+    
+    private fun proceedWithPlayback(stream: Stream, fromRetry: Boolean) {
         val url = prefs.getString("url", "") ?: ""
         val username = prefs.getString("username", "") ?: ""
         val password = prefs.getString("password", "") ?: ""
@@ -385,6 +405,47 @@ class MainActivity : AppCompatActivity() {
         playerView.useController = false
         loadEpg(stream)
     }
+
+    private fun showPINVerificationDialog(stream: Stream, fromRetry: Boolean) {
+        val builder = AlertDialog.Builder(this)
+        builder.setTitle(R.string.parental_control)
+        
+        val pinInput = EditText(this).apply {
+            hint = getString(R.string.enter_pin)
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setPadding(16, 16, 16, 16)
+            addView(pinInput)
+        }
+        
+        builder.setView(container)
+        builder.setPositiveButton(R.string.apply) { _, _ ->
+            val enteredPin = pinInput.text.toString()
+            if (parentalControl.validatePIN(enteredPin)) {
+                proceedWithPlayback(stream, fromRetry)
+            } else {
+                AlertDialog.Builder(this)
+                    .setTitle("Error")
+                    .setMessage("Invalid PIN")
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
+        }
+        builder.setNegativeButton(R.string.cancel, null)
+        builder.create().show()
+    }
+
 
     private fun buildStreamUrl(
         baseUrl: String,
@@ -537,7 +598,7 @@ class MainActivity : AppCompatActivity() {
         
         // Add Favorites header and items if there are any favorites
         if (favoritesItems.isNotEmpty()) {
-            allItems.add(ListItem.GroupItem(Group("Favorites", emptyList())))
+            allItems.add(ListItem.GroupItem(Group("Favorites", "-1", emptyList())))
             allItems.addAll(favoritesItems)
         }
         
@@ -768,6 +829,32 @@ class MainActivity : AppCompatActivity() {
         } else {
             resetRetryState()
         }
+        
+        // Check if parental control is enabled for this series category
+        val series = seriesList.find { it.series_id == seriesId }
+        if (series != null && parentalControl.isEnabled() && parentalControl.isCategoryRestricted(series.category_id)) {
+            if (!parentalControl.hasPINSet()) {
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.parental_control)
+                    .setMessage("Parental control is enabled but PIN is not set")
+                    .setPositiveButton("OK", null)
+                    .show()
+                return
+            }
+            // Show PIN dialog
+            showEpisodePINVerificationDialog(seriesId, season, episode, fromRetry)
+            return
+        }
+        
+        proceedWithEpisodePlayback(seriesId, season, episode, fromRetry)
+    }
+    
+    private fun proceedWithEpisodePlayback(seriesId: Int, season: Int, episode: Episode, fromRetry: Boolean) {
+        if (fromRetry) {
+            playbackRetryJob?.cancel()
+        } else {
+            resetRetryState()
+        }
         lastPlaybackAction = { playEpisode(seriesId, season, episode, fromRetry = true) }
         val episodeUrl = buildSeriesUrl(baseUrl, username, password, episode)
         nowPlaying.text = "Now Playing: ${episode.title}"
@@ -782,6 +869,47 @@ class MainActivity : AppCompatActivity() {
         playerView.useController = false
         showEpisodeResume(episode)
     }
+
+    private fun showEpisodePINVerificationDialog(seriesId: Int, season: Int, episode: Episode, fromRetry: Boolean) {
+        val builder = AlertDialog.Builder(this)
+        builder.setTitle(R.string.parental_control)
+        
+        val pinInput = EditText(this).apply {
+            hint = getString(R.string.enter_pin)
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setPadding(16, 16, 16, 16)
+            addView(pinInput)
+        }
+        
+        builder.setView(container)
+        builder.setPositiveButton(R.string.apply) { _, _ ->
+            val enteredPin = pinInput.text.toString()
+            if (parentalControl.validatePIN(enteredPin)) {
+                proceedWithEpisodePlayback(seriesId, season, episode, fromRetry)
+            } else {
+                AlertDialog.Builder(this)
+                    .setTitle("Error")
+                    .setMessage("Invalid PIN")
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
+        }
+        builder.setNegativeButton(R.string.cancel, null)
+        builder.create().show()
+    }
+
 
     private fun schedulePlaybackRetry() {
         val playbackAction = lastPlaybackAction ?: return
@@ -867,7 +995,8 @@ class MainActivity : AppCompatActivity() {
         val streamsById = allStreams.associateBy { it.stream_id }
         val ordered = recents.mapNotNull { streamsById[it] }
         if (ordered.isEmpty()) return null
-        return Group("Recent", ordered)
+        // Use "0" as category_id for recent items (they can come from any category)
+        return Group("Recent", "0", ordered)
     }
 
     private fun showParentalControlSettings() {
@@ -1020,7 +1149,7 @@ class MainActivity : AppCompatActivity() {
         }
         
         val categoryNames = groups.map { it.name }.toTypedArray()
-        val categoryIds = groups.map { it.name }.toTypedArray()  // Use name as ID for categories
+        val categoryIds = groups.map { it.category_id }.toTypedArray()  // Use actual category_id
         val restricted = parentalControl.getRestrictedCategories()
         val checkedItems = BooleanArray(categoryNames.size) { i ->
             restricted.contains(categoryIds[i])

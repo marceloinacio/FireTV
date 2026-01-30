@@ -51,6 +51,7 @@ data class Season(
 
 data class Group(
     val name: String,
+    val category_id: String,
     val channels: List<Stream>
 )
 
