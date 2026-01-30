@@ -77,11 +77,20 @@ class MainActivity : AppCompatActivity() {
     private var isFullscreen = false
     private var defaultPlayerHeight: Int = 0
     private var currentStream: Stream? = null
+    private var currentEpisode: Episode? = null
+    private var currentEpisodeSeriesId: Int? = null
+    private var currentEpisodeSeason: Int? = null
     private var state: UiState = UiState.ShowGroups
     private var groups: List<Group> = emptyList()
     private var allStreams: List<Stream> = emptyList()
     private var seriesList: List<SeriesInfo> = emptyList()
     private lateinit var fullscreenButton: ImageButton
+    private lateinit var controlsContainer: LinearLayout
+    private lateinit var btnPlayPause: ImageButton
+    private lateinit var btnSkipForward: ImageButton
+    private lateinit var btnSkipBack: ImageButton
+    private lateinit var btnNextChannel: ImageButton
+    private lateinit var btnPrevChannel: ImageButton
     private var baseUrl = ""
     private var username = ""
     private var password = ""
@@ -160,6 +169,15 @@ class MainActivity : AppCompatActivity() {
         searchInput = findViewById(R.id.search_input)
         fullscreenButton = findViewById(R.id.fullscreen_button)
         loadingContainer = findViewById(R.id.loading_container)
+        
+        // Initialize custom player controls
+        controlsContainer = findViewById(R.id.controls_container)
+        btnPlayPause = findViewById(R.id.btn_play_pause)
+        btnSkipForward = findViewById(R.id.btn_skip_forward)
+        btnSkipBack = findViewById(R.id.btn_skip_back)
+        btnNextChannel = findViewById(R.id.btn_next_channel)
+        btnPrevChannel = findViewById(R.id.btn_prev_channel)
+        
         defaultPlayerHeight = playerView.layoutParams.height
 
         channelList.layoutManager = LinearLayoutManager(this)
@@ -172,7 +190,15 @@ class MainActivity : AppCompatActivity() {
         backButton.setOnClickListener { showGroups() }
         settingsButton.setOnClickListener { showParentalControlSettings() }
         fullscreenButton.setOnClickListener { toggleFullscreen() }
-        playerView.setOnClickListener { toggleFullscreen() }
+        playerView.setOnClickListener { togglePlayerControls() }
+        
+        // Custom player control listeners
+        btnPlayPause.setOnClickListener { togglePlayPause() }
+        btnSkipForward.setOnClickListener { skipForward() }
+        btnSkipBack.setOnClickListener { skipBack() }
+        btnNextChannel.setOnClickListener { goToNextChannel() }
+        btnPrevChannel.setOnClickListener { goToPreviousChannel() }
+        
         searchInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
 
@@ -241,10 +267,19 @@ class MainActivity : AppCompatActivity() {
                 return true
             }
         } else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN && isFullscreen && player != null) {
-            playerView.useController = true
+            // Show custom controls instead of default
+            if (controlsContainer.visibility == View.GONE) {
+                controlsContainer.visibility = View.VISIBLE
+                // Auto-hide after 5 seconds
+                controlsContainer.postDelayed({
+                    if (isFullscreen && controlsContainer.visibility == View.VISIBLE) {
+                        controlsContainer.visibility = View.GONE
+                    }
+                }, 5000)
+            }
             return true
         } else if (keyCode == KeyEvent.KEYCODE_DPAD_UP && isFullscreen && player != null) {
-            playerView.useController = false
+            controlsContainer.visibility = View.GONE
             return true
         }
         return super.onKeyDown(keyCode, event)
@@ -403,6 +438,7 @@ class MainActivity : AppCompatActivity() {
         }
         setKeepScreenOn(true)
         playerView.useController = false
+        updatePlayPauseIcon()
         loadEpg(stream)
     }
 
@@ -585,6 +621,98 @@ class MainActivity : AppCompatActivity() {
             normalConstraints.applyTo(mainContainer)
         }
         updateEpgVisibility()
+    }
+
+    private fun togglePlayerControls() {
+        if (controlsContainer.visibility == View.VISIBLE) {
+            controlsContainer.visibility = View.GONE
+        } else {
+            controlsContainer.visibility = View.VISIBLE
+        }
+    }
+
+    private fun togglePlayPause() {
+        player?.apply {
+            if (isPlaying) {
+                pause()
+            } else {
+                play()
+            }
+        }
+        updatePlayPauseIcon()
+    }
+
+    private fun updatePlayPauseIcon() {
+        val isPlaying = player?.isPlaying ?: false
+        btnPlayPause.setImageResource(if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
+    }
+
+    private fun skipForward() {
+        player?.apply {
+            currentPosition = (currentPosition + 5000).coerceAtMost(duration)
+        }
+    }
+
+    private fun skipBack() {
+        player?.apply {
+            currentPosition = (currentPosition - 5000).coerceAtLeast(0)
+        }
+    }
+
+    private fun goToNextChannel() {
+        // Navigate to next channel/episode based on current state
+        when (state) {
+            is UiState.ShowChannels -> {
+                val groupState = state as UiState.ShowChannels
+                val currentStreamId = currentStream?.stream_id ?: return
+                val channels = groupState.group.channels
+                val currentIndex = channels.indexOfFirst { it.stream_id == currentStreamId }
+                if (currentIndex >= 0 && currentIndex < channels.size - 1) {
+                    startPlayback(channels[currentIndex + 1])
+                }
+            }
+            is UiState.ShowSeasonEpisodes -> {
+                val episodeState = state as UiState.ShowSeasonEpisodes
+                val seriesId = episodeState.seriesId
+                val season = episodeState.season
+                val series = seriesList.find { it.series_id == seriesId } ?: return
+                val episodes = series.seasons[season] ?: return
+                val currentEpisodeId = currentEpisode?.id ?: return
+                val currentIndex = episodes.indexOfFirst { it.id == currentEpisodeId }
+                if (currentIndex >= 0 && currentIndex < episodes.size - 1) {
+                    playEpisode(seriesId, season, episodes[currentIndex + 1])
+                }
+            }
+            else -> {}
+        }
+    }
+
+    private fun goToPreviousChannel() {
+        // Navigate to previous channel/episode based on current state
+        when (state) {
+            is UiState.ShowChannels -> {
+                val groupState = state as UiState.ShowChannels
+                val currentStreamId = currentStream?.stream_id ?: return
+                val channels = groupState.group.channels
+                val currentIndex = channels.indexOfFirst { it.stream_id == currentStreamId }
+                if (currentIndex > 0) {
+                    startPlayback(channels[currentIndex - 1])
+                }
+            }
+            is UiState.ShowSeasonEpisodes -> {
+                val episodeState = state as UiState.ShowSeasonEpisodes
+                val seriesId = episodeState.seriesId
+                val season = episodeState.season
+                val series = seriesList.find { it.series_id == seriesId } ?: return
+                val episodes = series.seasons[season] ?: return
+                val currentEpisodeId = currentEpisode?.id ?: return
+                val currentIndex = episodes.indexOfFirst { it.id == currentEpisodeId }
+                if (currentIndex > 0) {
+                    playEpisode(seriesId, season, episodes[currentIndex - 1])
+                }
+            }
+            else -> {}
+        }
     }
 
     private fun showGroups() {
@@ -856,6 +984,9 @@ class MainActivity : AppCompatActivity() {
             resetRetryState()
         }
         lastPlaybackAction = { playEpisode(seriesId, season, episode, fromRetry = true) }
+        currentEpisode = episode
+        currentEpisodeSeriesId = seriesId
+        currentEpisodeSeason = season
         val episodeUrl = buildSeriesUrl(baseUrl, username, password, episode)
         nowPlaying.text = "Now Playing: ${episode.title}"
         val mediaItem = MediaItem.fromUri(episodeUrl)
@@ -867,6 +998,7 @@ class MainActivity : AppCompatActivity() {
         }
         setKeepScreenOn(true)
         playerView.useController = false
+        updatePlayPauseIcon()
         showEpisodeResume(episode)
     }
 
