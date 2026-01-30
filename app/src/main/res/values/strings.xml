@@ -14,4 +14,22 @@
     <string name="epg_loading">Loading guide...</string>
     <string name="epg_not_available">EPG not available</string>
     <string name="epg_description_not_available">Description not available</string>
+    <string name="settings">Settings</string>
+    <string name="parental_control">Parental Control</string>
+    <string name="enable_parental_control">Enable Parental Control</string>
+    <string name="set_pin">Set PIN</string>
+    <string name="change_pin">Change PIN</string>
+    <string name="pin_label">PIN (4-6 digits)</string>
+    <string name="confirm_pin_label">Confirm PIN</string>
+    <string name="enter_pin">Enter PIN</string>
+    <string name="pin_mismatch">PINs do not match</string>
+    <string name="pin_too_short">PIN must be 4-6 digits</string>
+    <string name="pin_invalid_format">PIN must contain only digits</string>
+    <string name="restricted_categories">Restricted Categories</string>
+    <string name="select_categories">Select categories to restrict</string>
+    <string name="no_restricted_categories">No restricted categories</string>
+    <string name="apply">Apply</string>
+    <string name="cancel">Cancel</string>
+    <string name="parental_control_disabled">Parental Control is disabled</string>
+    <string name="parental_control_enabled">Parental Control is enabled</string>
 </resources>

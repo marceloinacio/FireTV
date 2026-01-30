@@ -1,5 +1,6 @@
 package com.tvapp
 
+import android.app.AlertDialog
 import android.content.SharedPreferences
 import android.os.Bundle
 import android.text.Editable
@@ -11,8 +12,10 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageButton
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.addCallback
 import androidx.appcompat.app.AppCompatActivity
@@ -40,6 +43,7 @@ import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
     private lateinit var prefs: SharedPreferences
+    private lateinit var parentalControl: ParentalControl
     private lateinit var credentialsContainer: View
     private lateinit var mainContainer: ConstraintLayout
     private lateinit var urlInput: TextInputEditText
@@ -50,6 +54,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var nowPlaying: TextView
     private lateinit var playerView: PlayerView
     private lateinit var backButton: Button
+    private lateinit var settingsButton: Button
     private lateinit var listTitle: TextView
     private lateinit var searchInput: EditText
     private lateinit var loadingContainer: View
@@ -105,8 +110,12 @@ class MainActivity : AppCompatActivity() {
         onSeasonClick = { seriesId, season -> showSeasonEpisodes(seriesId, season) },
         onEpisodeClick = { seriesId, season, episode -> playEpisode(seriesId, season, episode) },
         onEpisodeFocus = { episode -> showEpisodeResume(episode) },
-        onChannelLongClick = { stream -> toggleFavorite(stream) },
-        isFavorite = { stream -> getFavoriteIds().contains(stream.stream_id) }
+        onChannelLongClick = { stream -> toggleFavoriteStream(stream) },
+        onSeriesLongClick = { series -> toggleFavoriteSeries(series) },
+        onEpisodeLongClick = { seriesId, season, episode -> toggleFavoriteEpisode(seriesId, season, episode) },
+        isStreamFavorite = { stream -> isFavoriteStream(stream) },
+        isSeriesFavorite = { series -> isFavoriteSeries(series) },
+        isEpisodeFavorite = { seriesId, season, episode -> isFavoriteEpisode(seriesId, season, episode) }
     )
 
     private var lastGroupPosition: Int? = null
@@ -129,6 +138,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         prefs = getSharedPreferences("xtream_prefs", MODE_PRIVATE)
+        parentalControl = ParentalControl(prefs)
         credentialsContainer = findViewById(R.id.credentials_container)
         mainContainer = findViewById(R.id.main_container)
         urlInput = findViewById(R.id.url_input)
@@ -145,6 +155,7 @@ class MainActivity : AppCompatActivity() {
         epgTime = findViewById(R.id.epg_time)
         epgDescription = findViewById(R.id.epg_description)
         backButton = findViewById(R.id.back_button)
+        settingsButton = findViewById(R.id.settings_button)
         listTitle = findViewById(R.id.list_title)
         searchInput = findViewById(R.id.search_input)
         fullscreenButton = findViewById(R.id.fullscreen_button)
@@ -159,6 +170,7 @@ class MainActivity : AppCompatActivity() {
             playerView.player = it
         }
         backButton.setOnClickListener { showGroups() }
+        settingsButton.setOnClickListener { showParentalControlSettings() }
         fullscreenButton.setOnClickListener { toggleFullscreen() }
         playerView.setOnClickListener { toggleFullscreen() }
         searchInput.addTextChangedListener(object : TextWatcher {
@@ -518,11 +530,20 @@ class MainActivity : AppCompatActivity() {
         isEpisodeEpgActive = false
         state = UiState.ShowGroups
         val recentsGroup = buildRecentsGroup()
-        val favoritesGroup = buildFavoritesGroup()
-        val displayGroups = listOfNotNull(recentsGroup, favoritesGroup) + groups
+        val favoritesItems = buildFavoritesItems()
+        val displayGroups = listOfNotNull(recentsGroup) + groups
         
         val allItems = mutableListOf<ListItem>()
+        
+        // Add Favorites header and items if there are any favorites
+        if (favoritesItems.isNotEmpty()) {
+            allItems.add(ListItem.GroupItem(Group("Favorites", emptyList())))
+            allItems.addAll(favoritesItems)
+        }
+        
+        // Add other groups
         allItems.addAll(ListItem.from(displayGroups))
+        
         // Add series as items
         allItems.addAll(ListItem.fromSeries(seriesList.sortedBy { it.name.lowercase() }))
         
@@ -595,44 +616,66 @@ class MainActivity : AppCompatActivity() {
             .mapNotNull { it.toIntOrNull() }
     }
 
-    private fun getFavoriteIds(): Set<Int> {
-        val set = prefs.getStringSet("favorite_stream_ids", emptySet()) ?: emptySet()
-        return set.mapNotNull { it.toIntOrNull() }.toSet()
+    private fun getFavoriteIds(): Set<String> {
+        return prefs.getStringSet("favorite_ids", emptySet()) ?: emptySet()
     }
 
-    private fun toggleFavorite(stream: Stream) {
-        val key = "favorite_stream_ids"
-        val current = prefs.getStringSet(key, emptySet())?.toMutableSet() ?: mutableSetOf()
-        val idStr = stream.stream_id.toString()
-        if (current.contains(idStr)) {
-            current.remove(idStr)
-        } else {
-            current.add(idStr)
-        }
-        prefs.edit().putStringSet(key, current).apply()
+    private fun toggleFavoriteStream(stream: Stream) {
+        val key = "stream_${stream.stream_id}"
+        toggleFavorite(key)
+    }
 
-        // Store the stream ID to restore focus after update
-        val focusedStreamId = stream.stream_id
-        
+    private fun toggleFavoriteSeries(series: SeriesInfo) {
+        val key = "series_${series.series_id}"
+        toggleFavorite(key)
+    }
+
+    private fun toggleFavoriteEpisode(seriesId: Int, season: Int, episode: Episode) {
+        val key = "episode_${seriesId}_${season}_${episode.id}"
+        toggleFavorite(key)
+    }
+
+    private fun toggleFavorite(key: String) {
+        val current = prefs.getStringSet("favorite_ids", emptySet())?.toMutableSet() ?: mutableSetOf()
+        if (current.contains(key)) {
+            current.remove(key)
+        } else {
+            current.add(key)
+        }
+        prefs.edit().putStringSet("favorite_ids", current).apply()
+
+        // Refresh UI based on current state
         when (state) {
             is UiState.ShowGroups -> {
                 showGroups()
-                // Restore focus to the toggled channel after rebuilding the list
-                channelList.post {
-                    restoreFocusToStream(focusedStreamId)
-                }
             }
-            is UiState.ShowChannels, is UiState.ShowSearchResults -> {
+            is UiState.ShowChannels -> {
+                val groupState = state as UiState.ShowChannels
+                showChannelsIn(groupState.group, lastGroupPosition ?: 0)
+            }
+            is UiState.ShowSearchResults -> {
                 adapter.notifyDataSetChanged()
-                // Restore focus to the toggled channel
-                channelList.post {
-                    restoreFocusToStream(focusedStreamId)
-                }
             }
             is UiState.ShowSeriesSeasons, is UiState.ShowSeasonEpisodes -> {
-                // Do nothing for series states
+                adapter.notifyDataSetChanged()
             }
         }
+        updateEpgVisibility()
+    }
+
+    private fun isFavoriteStream(stream: Stream): Boolean {
+        val key = "stream_${stream.stream_id}"
+        return getFavoriteIds().contains(key)
+    }
+
+    private fun isFavoriteSeries(series: SeriesInfo): Boolean {
+        val key = "series_${series.series_id}"
+        return getFavoriteIds().contains(key)
+    }
+
+    private fun isFavoriteEpisode(seriesId: Int, season: Int, episode: Episode): Boolean {
+        val key = "episode_${seriesId}_${season}_${episode.id}"
+        return getFavoriteIds().contains(key)
     }
     
     private fun restoreFocusToStream(streamId: Int) {
@@ -801,11 +844,21 @@ class MainActivity : AppCompatActivity() {
         loadingContainer.visibility = View.GONE
     }
 
-    private fun buildFavoritesGroup(): Group {
+    private fun buildFavoritesItems(): List<ListItem> {
         val favorites = getFavoriteIds()
-        val favStreams = allStreams.filter { favorites.contains(it.stream_id) }
+        val items = mutableListOf<ListItem>()
+        
+        // Add favorite channels/movies
+        val favStreams = allStreams.filter { favorites.contains("stream_${it.stream_id}") }
             .sortedBy { it.name.lowercase() }
-        return Group("Favorites", favStreams)
+        items.addAll(favStreams.map { ListItem.ChannelItem(it) })
+        
+        // Add favorite series
+        val favSeries = seriesList.filter { favorites.contains("series_${it.series_id}") }
+            .sortedBy { it.name.lowercase() }
+        items.addAll(favSeries.map { ListItem.SeriesItem(it) })
+        
+        return items
     }
 
     private fun buildRecentsGroup(): Group? {
@@ -816,7 +869,180 @@ class MainActivity : AppCompatActivity() {
         if (ordered.isEmpty()) return null
         return Group("Recent", ordered)
     }
+
+    private fun showParentalControlSettings() {
+        val builder = AlertDialog.Builder(this)
+        builder.setTitle(R.string.parental_control)
+        
+        val dialogView = LayoutInflater.from(this).inflate(android.R.layout.simple_list_item_1, null)
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        
+        // Toggle parental control
+        val enableCheckBox = CheckBox(this).apply {
+            text = getString(R.string.enable_parental_control)
+            isChecked = parentalControl.isEnabled()
+        }
+        container.addView(enableCheckBox)
+        
+        // Set PIN button
+        val setPinButton = Button(this).apply {
+            text = getString(R.string.set_pin)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        container.addView(setPinButton)
+        
+        // Manage restricted categories button
+        val restrictCategoriesButton = Button(this).apply {
+            text = getString(R.string.restricted_categories)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        container.addView(restrictCategoriesButton)
+        
+        builder.setView(container)
+        builder.setPositiveButton(R.string.apply) { _, _ ->
+            parentalControl.setEnabled(enableCheckBox.isChecked)
+        }
+        builder.setNegativeButton(R.string.cancel, null)
+        
+        val dialog = builder.create()
+        dialog.show()
+        
+        setPinButton.setOnClickListener {
+            showPinDialog()
+        }
+        
+        restrictCategoriesButton.setOnClickListener {
+            showRestrictCategoriesDialog()
+        }
+    }
+
+    private fun showPinDialog() {
+        val builder = AlertDialog.Builder(this)
+        builder.setTitle(R.string.set_pin)
+        
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setPadding(16, 16, 16, 16)
+        }
+        
+        val pinInput = EditText(this).apply {
+            hint = getString(R.string.pin_label)
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        container.addView(pinInput)
+        
+        val confirmPinInput = EditText(this).apply {
+            hint = getString(R.string.confirm_pin_label)
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        container.addView(confirmPinInput)
+        
+        builder.setView(container)
+        builder.setPositiveButton(R.string.save) { _, _ ->
+            val pin = pinInput.text.toString()
+            val confirmPin = confirmPinInput.text.toString()
+            
+            when {
+                pin.isEmpty() || confirmPin.isEmpty() -> {
+                    AlertDialog.Builder(this)
+                        .setTitle("Error")
+                        .setMessage(R.string.pin_label)
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+                pin.length < 4 || pin.length > 6 -> {
+                    AlertDialog.Builder(this)
+                        .setTitle("Error")
+                        .setMessage(R.string.pin_too_short)
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+                pin != confirmPin -> {
+                    AlertDialog.Builder(this)
+                        .setTitle("Error")
+                        .setMessage(R.string.pin_mismatch)
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+                !pin.all { it.isDigit() } -> {
+                    AlertDialog.Builder(this)
+                        .setTitle("Error")
+                        .setMessage(R.string.pin_invalid_format)
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+                else -> {
+                    parentalControl.setPIN(pin)
+                    AlertDialog.Builder(this)
+                        .setTitle("Success")
+                        .setMessage("PIN has been set")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+            }
+        }
+        builder.setNegativeButton(R.string.cancel, null)
+        builder.create().show()
+    }
+
+    private fun showRestrictCategoriesDialog() {
+        if (groups.isEmpty()) {
+            AlertDialog.Builder(this)
+                .setTitle(R.string.restricted_categories)
+                .setMessage("No categories available")
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+        
+        val categoryNames = groups.map { it.name }.toTypedArray()
+        val categoryIds = groups.map { it.name }.toTypedArray()  // Use name as ID for categories
+        val restricted = parentalControl.getRestrictedCategories()
+        val checkedItems = BooleanArray(categoryNames.size) { i ->
+            restricted.contains(categoryIds[i])
+        }
+        
+        val builder = AlertDialog.Builder(this)
+        builder.setTitle(R.string.select_categories)
+        builder.setMultiChoiceItems(categoryNames, checkedItems) { _, which, isChecked ->
+            if (isChecked) {
+                parentalControl.addRestrictedCategory(categoryIds[which])
+            } else {
+                parentalControl.removeRestrictedCategory(categoryIds[which])
+            }
+        }
+        builder.setPositiveButton(R.string.apply) { _, _ ->
+            // Changes are saved in onCheckedChangeListener
+        }
+        builder.setNegativeButton(R.string.cancel, null)
+        builder.create().show()
+    }
 }
+
 
 private sealed class UiState {
     object ShowGroups : UiState()
@@ -834,7 +1060,11 @@ private class ChannelAdapter(
     private val onEpisodeClick: (Int, Int, Episode) -> Unit,
     private val onEpisodeFocus: (Episode) -> Unit,
     private val onChannelLongClick: (Stream) -> Unit,
-    private val isFavorite: (Stream) -> Boolean
+    private val onSeriesLongClick: (SeriesInfo) -> Unit,
+    private val onEpisodeLongClick: (Int, Int, Episode) -> Unit,
+    private val isStreamFavorite: (Stream) -> Boolean,
+    private val isSeriesFavorite: (SeriesInfo) -> Boolean,
+    private val isEpisodeFavorite: (Int, Int, Episode) -> Boolean
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     val items = mutableListOf<ListItem>()
 
@@ -863,11 +1093,11 @@ private class ChannelAdapter(
             }
             1 -> {
                 val view = inflater.inflate(R.layout.item_channel, parent, false)
-                ChannelViewHolder(view, onChannelClick, onChannelLongClick, isFavorite)
+                ChannelViewHolder(view, onChannelClick, onChannelLongClick, isStreamFavorite)
             }
             4 -> {
                 val view = inflater.inflate(R.layout.item_category, parent, false)
-                SeriesViewHolder(view, onSeriesClick)
+                SeriesViewHolder(view, onSeriesClick, onSeriesLongClick, isSeriesFavorite)
             }
             2 -> {
                 val view = inflater.inflate(R.layout.item_channel, parent, false)
@@ -875,7 +1105,7 @@ private class ChannelAdapter(
             }
             else -> {
                 val view = inflater.inflate(R.layout.item_channel, parent, false)
-                EpisodeViewHolder(view, onEpisodeClick, onEpisodeFocus)
+                EpisodeViewHolder(view, onEpisodeClick, onEpisodeFocus, onEpisodeLongClick, isEpisodeFavorite)
             }
         }
     }
@@ -949,7 +1179,9 @@ private class ChannelViewHolder(
 
 private class SeriesViewHolder(
     view: View,
-    private val onSeriesClick: (SeriesInfo) -> Unit
+    private val onSeriesClick: (SeriesInfo) -> Unit,
+    private val onSeriesLongClick: (SeriesInfo) -> Unit,
+    private val isFavorite: (SeriesInfo) -> Boolean
 ) : RecyclerView.ViewHolder(view) {
     private val title: TextView = view.findViewById(R.id.category_title)
     private var series: SeriesInfo? = null
@@ -958,11 +1190,19 @@ private class SeriesViewHolder(
         view.setOnClickListener {
             series?.let { onSeriesClick(it) }
         }
+        view.setOnLongClickListener {
+            series?.let { onSeriesLongClick(it) }
+            view.requestFocus()
+            true
+        }
     }
 
     fun bind(item: ListItem.SeriesItem) {
         series = item.series
         title.text = item.series.name
+        val fav = isFavorite(item.series)
+        val endDrawable = if (fav) R.drawable.ic_star_24 else 0
+        title.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, endDrawable, 0)
     }
 }
 
@@ -992,7 +1232,9 @@ private class SeasonViewHolder(
 private class EpisodeViewHolder(
     view: View,
     private val onEpisodeClick: (Int, Int, Episode) -> Unit,
-    private val onEpisodeFocus: (Episode) -> Unit
+    private val onEpisodeFocus: (Episode) -> Unit,
+    private val onEpisodeLongClick: (Int, Int, Episode) -> Unit,
+    private val isFavorite: (Int, Int, Episode) -> Boolean
 ) : RecyclerView.ViewHolder(view) {
     private val title: TextView = view.findViewById(R.id.channel_title)
     private var seriesId: Int = 0
@@ -1003,6 +1245,12 @@ private class EpisodeViewHolder(
         view.setOnClickListener {
             episode?.let { onEpisodeClick(seriesId, season, it) }
             view.requestFocus()
+        }
+
+        view.setOnLongClickListener {
+            episode?.let { onEpisodeLongClick(seriesId, season, it) }
+            view.requestFocus()
+            true
         }
 
         view.setOnFocusChangeListener { _, hasFocus ->
@@ -1017,7 +1265,9 @@ private class EpisodeViewHolder(
         season = item.season
         episode = item.episode
         title.text = "Episode ${item.episode.episode_num}: ${item.episode.title}"
-        title.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0)
+        val fav = isFavorite(seriesId, season, item.episode)
+        val endDrawable = if (fav) R.drawable.ic_star_24 else 0
+        title.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, endDrawable, 0)
 
         if (itemView.isFocused) {
             episode?.let { onEpisodeFocus(it) }
