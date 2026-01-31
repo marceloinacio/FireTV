@@ -88,11 +88,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var fullscreenButton: ImageButton
     private lateinit var controlsContainer: LinearLayout
     private lateinit var controlsBackground: View
-    private lateinit var btnPlayPause: ImageButton
-    private lateinit var btnSkipForward: ImageButton
-    private lateinit var btnSkipBack: ImageButton
-    private lateinit var btnNextChannel: ImageButton
-    private lateinit var btnPrevChannel: ImageButton
+    private lateinit var btnPlayPause: Button
+    private lateinit var btnSkipForward: Button
+    private lateinit var btnSkipBack: Button
+    private lateinit var btnNextChannel: Button
+    private lateinit var btnPrevChannel: Button
     private lateinit var controlsCurrentPlaying: TextView
     private lateinit var playerProgressBar: ProgressBar
     private lateinit var playerCurrentTime: TextView
@@ -690,7 +690,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun updatePlayPauseIcon() {
         val isPlaying = player?.isPlaying ?: false
-        btnPlayPause.setImageResource(if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
+        btnPlayPause.text = if (isPlaying) getString(R.string.pause) else getString(R.string.play)
     }
 
     private fun skipForward() {
