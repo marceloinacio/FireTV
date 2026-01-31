@@ -86,11 +86,12 @@ class MainActivity : AppCompatActivity() {
     private var seriesList: List<SeriesInfo> = emptyList()
     private lateinit var fullscreenButton: ImageButton
     private lateinit var controlsContainer: LinearLayout
-    private lateinit var btnPlayPause: ImageButton
-    private lateinit var btnSkipForward: ImageButton
-    private lateinit var btnSkipBack: ImageButton
-    private lateinit var btnNextChannel: ImageButton
-    private lateinit var btnPrevChannel: ImageButton
+    private lateinit var controlsBackground: View
+    private lateinit var btnPlayPause: Button
+    private lateinit var btnSkipForward: Button
+    private lateinit var btnSkipBack: Button
+    private lateinit var btnNextChannel: Button
+    private lateinit var btnPrevChannel: Button
     private var baseUrl = ""
     private var username = ""
     private var password = ""
@@ -157,6 +158,10 @@ class MainActivity : AppCompatActivity() {
         channelList = findViewById(R.id.channel_list)
         nowPlaying = findViewById(R.id.now_playing)
         playerView = findViewById(R.id.player_view)
+        playerView.useController = false
+        playerView.setControllerAutoShow(false)
+        playerView.setControllerHideOnTouch(false)
+        playerView.setControllerShowTimeoutMs(0)
         leftPanel = findViewById(R.id.left_panel)
         playerContainer = findViewById(R.id.player_container)
         epgContainer = findViewById(R.id.epg_container)
@@ -172,6 +177,7 @@ class MainActivity : AppCompatActivity() {
         
         // Initialize custom player controls
         controlsContainer = findViewById(R.id.controls_container)
+        controlsBackground = findViewById(R.id.controls_background)
         btnPlayPause = findViewById(R.id.btn_play_pause)
         btnSkipForward = findViewById(R.id.btn_skip_forward)
         btnSkipBack = findViewById(R.id.btn_skip_back)
@@ -190,7 +196,7 @@ class MainActivity : AppCompatActivity() {
         backButton.setOnClickListener { showGroups() }
         settingsButton.setOnClickListener { showParentalControlSettings() }
         fullscreenButton.setOnClickListener { toggleFullscreen() }
-        playerView.setOnClickListener { togglePlayerControls() }
+        playerView.setOnClickListener { toggleFullscreen() }
         
         // Custom player control listeners
         btnPlayPause.setOnClickListener { togglePlayPause() }
@@ -266,20 +272,14 @@ class MainActivity : AppCompatActivity() {
                 showGroups()
                 return true
             }
-        } else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN && isFullscreen && player != null) {
-            // Show custom controls instead of default
-            if (controlsContainer.visibility == View.GONE) {
-                controlsContainer.visibility = View.VISIBLE
-                // Auto-hide after 5 seconds
-                controlsContainer.postDelayed({
-                    if (isFullscreen && controlsContainer.visibility == View.VISIBLE) {
-                        controlsContainer.visibility = View.GONE
-                    }
-                }, 5000)
+        } else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN && player != null) {
+            if (playerView.hasFocus() || isFullscreen) {
+                togglePlayerControls()
+                return true
             }
-            return true
-        } else if (keyCode == KeyEvent.KEYCODE_DPAD_UP && isFullscreen && player != null) {
+        } else if (keyCode == KeyEvent.KEYCODE_DPAD_UP && player != null) {
             controlsContainer.visibility = View.GONE
+            controlsBackground.visibility = View.GONE
             return true
         }
         return super.onKeyDown(keyCode, event)
@@ -626,8 +626,11 @@ class MainActivity : AppCompatActivity() {
     private fun togglePlayerControls() {
         if (controlsContainer.visibility == View.VISIBLE) {
             controlsContainer.visibility = View.GONE
+            controlsBackground.visibility = View.GONE
         } else {
             controlsContainer.visibility = View.VISIBLE
+            controlsBackground.visibility = View.VISIBLE
+            btnPlayPause.requestFocus()
         }
     }
 
@@ -644,18 +647,33 @@ class MainActivity : AppCompatActivity() {
 
     private fun updatePlayPauseIcon() {
         val isPlaying = player?.isPlaying ?: false
-        btnPlayPause.setImageResource(if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
+        btnPlayPause.text = if (isPlaying) getString(R.string.pause) else getString(R.string.play)
     }
 
     private fun skipForward() {
         player?.apply {
-            currentPosition = (currentPosition + 5000).coerceAtMost(duration)
+            val targetPosition = if (duration > 0) {
+                (currentPosition + 5000).coerceAtMost(duration)
+            } else {
+                currentPosition + 5000
+            }
+            seekTo(targetPosition)
         }
     }
 
     private fun skipBack() {
         player?.apply {
-            currentPosition = (currentPosition - 5000).coerceAtLeast(0)
+            val targetPosition = (currentPosition - 5000).coerceAtLeast(0)
+            seekTo(targetPosition)
+        }
+    }
+
+    private fun getVisibleStreams(): List<Stream> {
+        return adapter.items.mapNotNull { item ->
+            when (item) {
+                is ListItem.ChannelItem -> item.stream
+                else -> null
+            }
         }
     }
 
@@ -666,6 +684,14 @@ class MainActivity : AppCompatActivity() {
                 val groupState = state as UiState.ShowChannels
                 val currentStreamId = currentStream?.stream_id ?: return
                 val channels = groupState.group.channels
+                val currentIndex = channels.indexOfFirst { it.stream_id == currentStreamId }
+                if (currentIndex >= 0 && currentIndex < channels.size - 1) {
+                    startPlayback(channels[currentIndex + 1])
+                }
+            }
+            is UiState.ShowGroups, is UiState.ShowSearchResults -> {
+                val currentStreamId = currentStream?.stream_id ?: return
+                val channels = getVisibleStreams()
                 val currentIndex = channels.indexOfFirst { it.stream_id == currentStreamId }
                 if (currentIndex >= 0 && currentIndex < channels.size - 1) {
                     startPlayback(channels[currentIndex + 1])
@@ -694,6 +720,14 @@ class MainActivity : AppCompatActivity() {
                 val groupState = state as UiState.ShowChannels
                 val currentStreamId = currentStream?.stream_id ?: return
                 val channels = groupState.group.channels
+                val currentIndex = channels.indexOfFirst { it.stream_id == currentStreamId }
+                if (currentIndex > 0) {
+                    startPlayback(channels[currentIndex - 1])
+                }
+            }
+            is UiState.ShowGroups, is UiState.ShowSearchResults -> {
+                val currentStreamId = currentStream?.stream_id ?: return
+                val channels = getVisibleStreams()
                 val currentIndex = channels.indexOfFirst { it.stream_id == currentStreamId }
                 if (currentIndex > 0) {
                     startPlayback(channels[currentIndex - 1])

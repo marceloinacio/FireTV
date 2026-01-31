@@ -158,7 +158,11 @@
                 android:layout_height="360dp"
                 android:focusable="true"
                 android:focusableInTouchMode="true"
-                android:background="@drawable/player_focus_border" />
+                android:background="@drawable/player_focus_border"
+                app:use_controller="false" />
+
+            <include
+                layout="@layout/custom_player_controls" />
 
             <!-- Custom Player Controls -->
             <LinearLayout

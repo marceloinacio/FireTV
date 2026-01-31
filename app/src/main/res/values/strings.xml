@@ -37,4 +37,6 @@
     <string name="skip_back">Skip Back 5 seconds</string>
     <string name="next_channel">Next Channel</string>
     <string name="previous_channel">Previous Channel</string>
+    <string name="play">Play</string>
+    <string name="pause">Pause</string>
 </resources>
