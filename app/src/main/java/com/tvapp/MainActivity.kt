@@ -278,9 +278,13 @@ class MainActivity : AppCompatActivity() {
                 return true
             }
         } else if (keyCode == KeyEvent.KEYCODE_DPAD_UP && player != null) {
-            controlsContainer.visibility = View.GONE
-            controlsBackground.visibility = View.GONE
-            return true
+            // Only hide controls if they are visible, otherwise allow normal focus navigation
+            if (controlsContainer.visibility == View.VISIBLE) {
+                controlsContainer.visibility = View.GONE
+                controlsBackground.visibility = View.GONE
+                playerView.requestFocus()
+                return true
+            }
         }
         return super.onKeyDown(keyCode, event)
     }
