@@ -267,10 +267,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
-            if (isFullscreen) {
+            if (isFullscreen && controlsContainer.visibility == View.GONE) {
                 toggleFullscreen()
                 return true
-            } else if (state is UiState.ShowChannels) {
+            } else if (state is UiState.ShowChannels && controlsContainer.visibility == View.GONE) {
                 showGroups()
                 return true
             }
