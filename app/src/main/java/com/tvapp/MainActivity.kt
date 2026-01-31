@@ -779,79 +779,134 @@ class MainActivity : AppCompatActivity() {
 
     private fun goToNextChannel() {
         // Navigate to next channel/episode based on current state
-        when (state) {
-            is UiState.ShowChannels -> {
-                val groupState = state as UiState.ShowChannels
-                val currentStreamId = currentStream?.stream_id ?: return
-                val channels = groupState.group.channels
-                val currentIndex = channels.indexOfFirst { it.stream_id == currentStreamId }
-                if (currentIndex >= 0 && currentIndex < channels.size - 1) {
-                    startPlayback(channels[currentIndex + 1])
+        try {
+            when (state) {
+                is UiState.ShowChannels -> {
+                    val groupState = state as UiState.ShowChannels
+                    val currentStreamId = currentStream?.stream_id ?: run {
+                        Log.w("MainActivity", "goToNextChannel: currentStream is null in ShowChannels state")
+                        return
+                    }
+                    val channels = groupState.group.channels
+                    val currentIndex = channels.indexOfFirst { it.stream_id == currentStreamId }
+                    if (currentIndex >= 0 && currentIndex < channels.size - 1) {
+                        startPlayback(channels[currentIndex + 1])
+                        updateControlsCurrentPlaying()
+                    } else {
+                        Log.d("MainActivity", "goToNextChannel: Already at last channel or index not found (index=$currentIndex, size=${channels.size})")
+                    }
+                }
+                is UiState.ShowGroups, is UiState.ShowSearchResults -> {
+                    val currentStreamId = currentStream?.stream_id ?: run {
+                        Log.w("MainActivity", "goToNextChannel: currentStream is null in ShowGroups/ShowSearchResults state")
+                        return
+                    }
+                    // First, try to find the stream in all available streams
+                    val nextStream = allStreams.dropWhile { it.stream_id != currentStreamId }
+                        .drop(1)
+                        .firstOrNull() ?: run {
+                        Log.d("MainActivity", "goToNextChannel: No next stream found in allStreams")
+                        return
+                    }
+                    startPlayback(nextStream)
                     updateControlsCurrentPlaying()
                 }
-            }
-            is UiState.ShowGroups, is UiState.ShowSearchResults -> {
-                val currentStreamId = currentStream?.stream_id ?: return
-                val channels = getVisibleStreams()
-                val currentIndex = channels.indexOfFirst { it.stream_id == currentStreamId }
-                if (currentIndex >= 0 && currentIndex < channels.size - 1) {
-                    startPlayback(channels[currentIndex + 1])
-                    updateControlsCurrentPlaying()
+                is UiState.ShowSeasonEpisodes -> {
+                    val episodeState = state as UiState.ShowSeasonEpisodes
+                    val seriesId = episodeState.seriesId
+                    val season = episodeState.season
+                    val series = seriesList.find { it.series_id == seriesId } ?: run {
+                        Log.w("MainActivity", "goToNextChannel: Series not found (seriesId=$seriesId)")
+                        return
+                    }
+                    val episodes = series.seasons[season] ?: run {
+                        Log.w("MainActivity", "goToNextChannel: Episodes not found for season (seriesId=$seriesId, season=$season)")
+                        return
+                    }
+                    val currentEpisodeId = currentEpisode?.id ?: run {
+                        Log.w("MainActivity", "goToNextChannel: currentEpisode is null in ShowSeasonEpisodes state")
+                        return
+                    }
+                    val currentIndex = episodes.indexOfFirst { it.id == currentEpisodeId }
+                    if (currentIndex >= 0 && currentIndex < episodes.size - 1) {
+                        playEpisode(seriesId, season, episodes[currentIndex + 1])
+                        updateControlsCurrentPlaying()
+                    } else {
+                        Log.d("MainActivity", "goToNextChannel: Already at last episode or index not found (index=$currentIndex, size=${episodes.size})")
+                    }
+                }
+                else -> {
+                    Log.d("MainActivity", "goToNextChannel: State ${state::class.simpleName} does not support next channel navigation")
                 }
             }
-            is UiState.ShowSeasonEpisodes -> {
-                val episodeState = state as UiState.ShowSeasonEpisodes
-                val seriesId = episodeState.seriesId
-                val season = episodeState.season
-                val series = seriesList.find { it.series_id == seriesId } ?: return
-                val episodes = series.seasons[season] ?: return
-                val currentEpisodeId = currentEpisode?.id ?: return
-                val currentIndex = episodes.indexOfFirst { it.id == currentEpisodeId }
-                if (currentIndex >= 0 && currentIndex < episodes.size - 1) {
-                    playEpisode(seriesId, season, episodes[currentIndex + 1])
-                    updateControlsCurrentPlaying()
-                }
-            }
-            else -> {}
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error in goToNextChannel", e)
         }
     }
 
     private fun goToPreviousChannel() {
         // Navigate to previous channel/episode based on current state
-        when (state) {
-            is UiState.ShowChannels -> {
-                val groupState = state as UiState.ShowChannels
-                val currentStreamId = currentStream?.stream_id ?: return
-                val channels = groupState.group.channels
-                val currentIndex = channels.indexOfFirst { it.stream_id == currentStreamId }
-                if (currentIndex > 0) {
-                    startPlayback(channels[currentIndex - 1])
+        try {
+            when (state) {
+                is UiState.ShowChannels -> {
+                    val groupState = state as UiState.ShowChannels
+                    val currentStreamId = currentStream?.stream_id ?: run {
+                        Log.w("MainActivity", "goToPreviousChannel: currentStream is null in ShowChannels state")
+                        return
+                    }
+                    val channels = groupState.group.channels
+                    val currentIndex = channels.indexOfFirst { it.stream_id == currentStreamId }
+                    if (currentIndex > 0) {
+                        startPlayback(channels[currentIndex - 1])
+                        updateControlsCurrentPlaying()
+                    } else {
+                        Log.d("MainActivity", "goToPreviousChannel: Already at first channel or index not found (index=$currentIndex)")
+                    }
+                }
+                is UiState.ShowGroups, is UiState.ShowSearchResults -> {
+                    val currentStreamId = currentStream?.stream_id ?: run {
+                        Log.w("MainActivity", "goToPreviousChannel: currentStream is null in ShowGroups/ShowSearchResults state")
+                        return
+                    }
+                    // First, try to find the stream in all available streams
+                    val previousStream = allStreams.takeWhile { it.stream_id != currentStreamId }
+                        .lastOrNull() ?: run {
+                        Log.d("MainActivity", "goToPreviousChannel: No previous stream found in allStreams")
+                        return
+                    }
+                    startPlayback(previousStream)
                     updateControlsCurrentPlaying()
                 }
-            }
-            is UiState.ShowGroups, is UiState.ShowSearchResults -> {
-                val currentStreamId = currentStream?.stream_id ?: return
-                val channels = getVisibleStreams()
-                val currentIndex = channels.indexOfFirst { it.stream_id == currentStreamId }
-                if (currentIndex > 0) {
-                    startPlayback(channels[currentIndex - 1])
-                    updateControlsCurrentPlaying()
+                is UiState.ShowSeasonEpisodes -> {
+                    val episodeState = state as UiState.ShowSeasonEpisodes
+                    val seriesId = episodeState.seriesId
+                    val season = episodeState.season
+                    val series = seriesList.find { it.series_id == seriesId } ?: run {
+                        Log.w("MainActivity", "goToPreviousChannel: Series not found (seriesId=$seriesId)")
+                        return
+                    }
+                    val episodes = series.seasons[season] ?: run {
+                        Log.w("MainActivity", "goToPreviousChannel: Episodes not found for season (seriesId=$seriesId, season=$season)")
+                        return
+                    }
+                    val currentEpisodeId = currentEpisode?.id ?: run {
+                        Log.w("MainActivity", "goToPreviousChannel: currentEpisode is null in ShowSeasonEpisodes state")
+                        return
+                    }
+                    val currentIndex = episodes.indexOfFirst { it.id == currentEpisodeId }
+                    if (currentIndex > 0) {
+                        playEpisode(seriesId, season, episodes[currentIndex - 1])
+                        updateControlsCurrentPlaying()
+                    } else {
+                        Log.d("MainActivity", "goToPreviousChannel: Already at first episode or index not found (index=$currentIndex)")
+                    }
+                }
+                else -> {
+                    Log.d("MainActivity", "goToPreviousChannel: State ${state::class.simpleName} does not support previous channel navigation")
                 }
             }
-            is UiState.ShowSeasonEpisodes -> {
-                val episodeState = state as UiState.ShowSeasonEpisodes
-                val seriesId = episodeState.seriesId
-                val season = episodeState.season
-                val series = seriesList.find { it.series_id == seriesId } ?: return
-                val episodes = series.seasons[season] ?: return
-                val currentEpisodeId = currentEpisode?.id ?: return
-                val currentIndex = episodes.indexOfFirst { it.id == currentEpisodeId }
-                if (currentIndex > 0) {
-                    playEpisode(seriesId, season, episodes[currentIndex - 1])
-                    updateControlsCurrentPlaying()
-                }
-            }
-            else -> {}
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error in goToPreviousChannel", e)
         }
     }
 
