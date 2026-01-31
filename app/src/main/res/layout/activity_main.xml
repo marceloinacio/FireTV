@@ -161,32 +161,41 @@
                 android:background="@drawable/player_focus_border"
                 app:use_controller="false" />
 
-            <include
-                layout="@layout/custom_player_controls" />
-
             <!-- Custom Player Controls -->
             <LinearLayout
                 android:id="@+id/controls_container"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:orientation="vertical"
-                android:gravity="center"
                 android:visibility="gone">
 
                 <!-- Overlay background -->
                 <View
+                    android:id="@+id/controls_background"
                     android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:background="#4D000000"
-                    android:visibility="gone" />
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:background="#4D000000" />
 
-                <!-- Control buttons row -->
+                <!-- Current playing info -->
+                <TextView
+                    android:id="@+id/controls_current_playing"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:padding="16dp"
+                    android:text=""
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp"
+                    android:gravity="center"
+                    android:maxLines="2"
+                    android:ellipsize="end" />
+
+                <!-- Control buttons row (centered) -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:gravity="center"
-                    android:paddingBottom="32dp">
+                    android:gravity="center">
 
                     <!-- Previous Channel Button -->
                     <ImageButton
@@ -247,6 +256,55 @@
                         android:background="?attr/selectableItemBackgroundBorderless"
                         android:scaleType="centerInside"
                         android:tint="@color/text_primary" />
+                </LinearLayout>
+
+                <!-- Progress bar and time display at bottom -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp"
+                    android:background="#80000000">
+
+                    <!-- Progress bar -->
+                    <ProgressBar
+                        android:id="@+id/player_progress_bar"
+                        style="@android:style/Widget.ProgressBar.Horizontal"
+                        android:layout_width="match_parent"
+                        android:layout_height="6dp"
+                        android:layout_marginBottom="8dp"
+                        android:progress="0"
+                        android:max="100"
+                        android:progressDrawable="@drawable/custom_progress_bar"
+                        android:indeterminate="false" />
+
+                    <!-- Time display -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:weightSum="1">
+
+                        <TextView
+                            android:id="@+id/player_current_time"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="0.5"
+                            android:text="00:00"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:id="@+id/player_total_duration"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="0.5"
+                            android:text="00:00"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:gravity="end" />
+                    </LinearLayout>
                 </LinearLayout>
             </LinearLayout>
 

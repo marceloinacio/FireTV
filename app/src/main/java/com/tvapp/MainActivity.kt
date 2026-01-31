@@ -16,6 +16,7 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.activity.addCallback
 import androidx.appcompat.app.AppCompatActivity
@@ -87,18 +88,22 @@ class MainActivity : AppCompatActivity() {
     private lateinit var fullscreenButton: ImageButton
     private lateinit var controlsContainer: LinearLayout
     private lateinit var controlsBackground: View
-    private lateinit var btnPlayPause: Button
-    private lateinit var btnSkipForward: Button
-    private lateinit var btnSkipBack: Button
-    private lateinit var btnNextChannel: Button
-    private lateinit var btnPrevChannel: Button
+    private lateinit var btnPlayPause: ImageButton
+    private lateinit var btnSkipForward: ImageButton
+    private lateinit var btnSkipBack: ImageButton
+    private lateinit var btnNextChannel: ImageButton
+    private lateinit var btnPrevChannel: ImageButton
     private lateinit var controlsCurrentPlaying: TextView
+    private lateinit var playerProgressBar: ProgressBar
+    private lateinit var playerCurrentTime: TextView
+    private lateinit var playerTotalDuration: TextView
     private var baseUrl = ""
     private var username = ""
     private var password = ""
     private var playbackRetryJob: Job? = null
     private var consecutiveErrorCount = 0
     private var lastPlaybackAction: (() -> Unit)? = null
+    private var progressUpdateJob: Job? = null
 
     private val playbackListener = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) {
@@ -185,6 +190,9 @@ class MainActivity : AppCompatActivity() {
         btnNextChannel = findViewById(R.id.btn_next_channel)
         btnPrevChannel = findViewById(R.id.btn_prev_channel)
         controlsCurrentPlaying = findViewById(R.id.controls_current_playing)
+        playerProgressBar = findViewById<ProgressBar>(R.id.player_progress_bar)
+        playerCurrentTime = findViewById<TextView>(R.id.player_current_time)
+        playerTotalDuration = findViewById<TextView>(R.id.player_total_duration)
         
         defaultPlayerHeight = playerView.layoutParams.height
 
@@ -199,6 +207,13 @@ class MainActivity : AppCompatActivity() {
         settingsButton.setOnClickListener { showParentalControlSettings() }
         fullscreenButton.setOnClickListener { toggleFullscreen() }
         playerView.setOnClickListener { toggleFullscreen() }
+        
+        // Add focus listener to playerView to auto-focus PLAY button when controls are visible
+        playerView.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus && controlsContainer.visibility == View.VISIBLE) {
+                btnPlayPause.requestFocus()
+            }
+        }
         
         // Custom player control listeners
         btnPlayPause.setOnClickListener { togglePlayPause() }
@@ -262,6 +277,7 @@ class MainActivity : AppCompatActivity() {
         epgJob?.cancel()
         epgLoadJob?.cancel()
         playbackRetryJob?.cancel()
+        progressUpdateJob?.cancel()
         setKeepScreenOn(false)
     }
 
@@ -284,6 +300,8 @@ class MainActivity : AppCompatActivity() {
             if (controlsContainer.visibility == View.VISIBLE) {
                 controlsContainer.visibility = View.GONE
                 controlsBackground.visibility = View.GONE
+                progressUpdateJob?.cancel()
+                progressUpdateJob = null
                 playerView.requestFocus()
                 return true
             }
@@ -633,11 +651,15 @@ class MainActivity : AppCompatActivity() {
         if (controlsContainer.visibility == View.VISIBLE) {
             controlsContainer.visibility = View.GONE
             controlsBackground.visibility = View.GONE
+            progressUpdateJob?.cancel()
+            progressUpdateJob = null
         } else {
             controlsContainer.visibility = View.VISIBLE
             controlsBackground.visibility = View.VISIBLE
             updateControlsCurrentPlaying()
+            updatePlayerProgress()
             btnPlayPause.requestFocus()
+            startProgressUpdate()
         }
     }
 
@@ -668,7 +690,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun updatePlayPauseIcon() {
         val isPlaying = player?.isPlaying ?: false
-        btnPlayPause.text = if (isPlaying) getString(R.string.pause) else getString(R.string.play)
+        btnPlayPause.setImageResource(if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
     }
 
     private fun skipForward() {
@@ -686,6 +708,46 @@ class MainActivity : AppCompatActivity() {
         player?.apply {
             val targetPosition = (currentPosition - 5000).coerceAtLeast(0)
             seekTo(targetPosition)
+        }
+    }
+
+    private fun startProgressUpdate() {
+        progressUpdateJob?.cancel()
+        progressUpdateJob = lifecycleScope.launch {
+            while (isActive) {
+                updatePlayerProgress()
+                delay(500) // Update every 500ms
+            }
+        }
+    }
+
+    private fun updatePlayerProgress() {
+        player?.apply {
+            val currentMs = currentPosition
+            val durationMs = duration
+            
+            if (durationMs > 0) {
+                playerProgressBar.setMax(100)
+                playerProgressBar.setProgress((currentMs * 100 / durationMs).toInt())
+            } else {
+                playerProgressBar.setProgress(0)
+            }
+            
+            playerCurrentTime.text = formatTime(currentMs)
+            playerTotalDuration.text = formatTime(durationMs)
+        }
+    }
+
+    private fun formatTime(milliseconds: Long): String {
+        if (milliseconds < 0) return "00:00"
+        val seconds = (milliseconds / 1000) % 60
+        val minutes = (milliseconds / (1000 * 60)) % 60
+        val hours = (milliseconds / (1000 * 60 * 60))
+        
+        return if (hours > 0) {
+            String.format("%02d:%02d:%02d", hours, minutes, seconds)
+        } else {
+            String.format("%02d:%02d", minutes, seconds)
         }
     }
 
