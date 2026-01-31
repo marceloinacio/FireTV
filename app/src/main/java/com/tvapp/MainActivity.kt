@@ -104,6 +104,7 @@ class MainActivity : AppCompatActivity() {
     private var consecutiveErrorCount = 0
     private var lastPlaybackAction: (() -> Unit)? = null
     private var progressUpdateJob: Job? = null
+    private var hideControlsJob: Job? = null
 
     private val playbackListener = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) {
@@ -278,6 +279,7 @@ class MainActivity : AppCompatActivity() {
         epgLoadJob?.cancel()
         playbackRetryJob?.cancel()
         progressUpdateJob?.cancel()
+        hideControlsJob?.cancel()
         setKeepScreenOn(false)
     }
 
@@ -653,6 +655,8 @@ class MainActivity : AppCompatActivity() {
             controlsBackground.visibility = View.GONE
             progressUpdateJob?.cancel()
             progressUpdateJob = null
+            hideControlsJob?.cancel()
+            hideControlsJob = null
         } else {
             controlsContainer.visibility = View.VISIBLE
             controlsBackground.visibility = View.VISIBLE
@@ -660,6 +664,20 @@ class MainActivity : AppCompatActivity() {
             updatePlayerProgress()
             btnPlayPause.requestFocus()
             startProgressUpdate()
+            startAutoHideControls()
+        }
+    }
+
+    private fun startAutoHideControls() {
+        hideControlsJob?.cancel()
+        hideControlsJob = lifecycleScope.launch {
+            delay(5000) // Hide after 5 seconds
+            if (isActive && controlsContainer.visibility == View.VISIBLE) {
+                controlsContainer.visibility = View.GONE
+                controlsBackground.visibility = View.GONE
+                progressUpdateJob?.cancel()
+                progressUpdateJob = null
+            }
         }
     }
 
