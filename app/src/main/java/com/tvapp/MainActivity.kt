@@ -92,6 +92,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnSkipBack: Button
     private lateinit var btnNextChannel: Button
     private lateinit var btnPrevChannel: Button
+    private lateinit var controlsCurrentPlaying: TextView
     private var baseUrl = ""
     private var username = ""
     private var password = ""
@@ -183,6 +184,7 @@ class MainActivity : AppCompatActivity() {
         btnSkipBack = findViewById(R.id.btn_skip_back)
         btnNextChannel = findViewById(R.id.btn_next_channel)
         btnPrevChannel = findViewById(R.id.btn_prev_channel)
+        controlsCurrentPlaying = findViewById(R.id.controls_current_playing)
         
         defaultPlayerHeight = playerView.layoutParams.height
 
@@ -634,8 +636,23 @@ class MainActivity : AppCompatActivity() {
         } else {
             controlsContainer.visibility = View.VISIBLE
             controlsBackground.visibility = View.VISIBLE
+            updateControlsCurrentPlaying()
             btnPlayPause.requestFocus()
         }
+    }
+
+    private fun updateControlsCurrentPlaying() {
+        val displayText = when (state) {
+            is UiState.ShowChannels, is UiState.ShowGroups, is UiState.ShowSearchResults -> {
+                currentStream?.name ?: "No stream"
+            }
+            is UiState.ShowSeasonEpisodes -> {
+                val series = seriesList.find { it.series_id == currentEpisodeSeriesId }
+                "${series?.name ?: ""} - ${currentEpisode?.title ?: "Episode"}"
+            }
+            else -> "No content"
+        }
+        controlsCurrentPlaying.text = displayText
     }
 
     private fun togglePlayPause() {
@@ -691,6 +708,7 @@ class MainActivity : AppCompatActivity() {
                 val currentIndex = channels.indexOfFirst { it.stream_id == currentStreamId }
                 if (currentIndex >= 0 && currentIndex < channels.size - 1) {
                     startPlayback(channels[currentIndex + 1])
+                    updateControlsCurrentPlaying()
                 }
             }
             is UiState.ShowGroups, is UiState.ShowSearchResults -> {
@@ -699,6 +717,7 @@ class MainActivity : AppCompatActivity() {
                 val currentIndex = channels.indexOfFirst { it.stream_id == currentStreamId }
                 if (currentIndex >= 0 && currentIndex < channels.size - 1) {
                     startPlayback(channels[currentIndex + 1])
+                    updateControlsCurrentPlaying()
                 }
             }
             is UiState.ShowSeasonEpisodes -> {
@@ -711,6 +730,7 @@ class MainActivity : AppCompatActivity() {
                 val currentIndex = episodes.indexOfFirst { it.id == currentEpisodeId }
                 if (currentIndex >= 0 && currentIndex < episodes.size - 1) {
                     playEpisode(seriesId, season, episodes[currentIndex + 1])
+                    updateControlsCurrentPlaying()
                 }
             }
             else -> {}
@@ -727,6 +747,7 @@ class MainActivity : AppCompatActivity() {
                 val currentIndex = channels.indexOfFirst { it.stream_id == currentStreamId }
                 if (currentIndex > 0) {
                     startPlayback(channels[currentIndex - 1])
+                    updateControlsCurrentPlaying()
                 }
             }
             is UiState.ShowGroups, is UiState.ShowSearchResults -> {
@@ -735,6 +756,7 @@ class MainActivity : AppCompatActivity() {
                 val currentIndex = channels.indexOfFirst { it.stream_id == currentStreamId }
                 if (currentIndex > 0) {
                     startPlayback(channels[currentIndex - 1])
+                    updateControlsCurrentPlaying()
                 }
             }
             is UiState.ShowSeasonEpisodes -> {
@@ -747,6 +769,7 @@ class MainActivity : AppCompatActivity() {
                 val currentIndex = episodes.indexOfFirst { it.id == currentEpisodeId }
                 if (currentIndex > 0) {
                     playEpisode(seriesId, season, episodes[currentIndex - 1])
+                    updateControlsCurrentPlaying()
                 }
             }
             else -> {}

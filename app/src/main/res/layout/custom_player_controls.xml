@@ -107,5 +107,19 @@
                 android:focusable="true"
                 android:focusableInTouchMode="true" />
         </LinearLayout>
+
+        <!-- Current playing info at bottom -->
+        <TextView
+            android:id="@+id/controls_current_playing"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="32dp"
+            android:padding="16dp"
+            android:text=""
+            android:textColor="@color/text_primary"
+            android:textSize="16sp"
+            android:gravity="center"
+            android:maxLines="2"
+            android:ellipsize="end" />
     </LinearLayout>
 </FrameLayout>
