@@ -664,7 +664,6 @@ class MainActivity : AppCompatActivity() {
             updatePlayerProgress()
             btnPlayPause.requestFocus()
             startProgressUpdate()
-            startAutoHideControls()
         }
     }
 
