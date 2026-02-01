@@ -8,6 +8,7 @@ import android.text.TextWatcher
 import android.util.Log
 import android.view.KeyEvent
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -105,6 +106,10 @@ class MainActivity : AppCompatActivity() {
     private var lastPlaybackAction: (() -> Unit)? = null
     private var progressUpdateJob: Job? = null
     private var hideControlsJob: Job? = null
+    private var skipForwardJob: Job? = null
+    private var skipBackJob: Job? = null
+    private var skipForwardStartTime: Long = 0
+    private var skipBackStartTime: Long = 0
 
     private val playbackListener = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) {
@@ -218,8 +223,65 @@ class MainActivity : AppCompatActivity() {
         
         // Custom player control listeners
         btnPlayPause.setOnClickListener { togglePlayPause() }
-        btnSkipForward.setOnClickListener { skipForward() }
-        btnSkipBack.setOnClickListener { skipBack() }
+        
+        // Skip Forward Button - handles both tap and long press via key events
+        btnSkipForward.setOnClickListener { skipForward(5000) }
+        btnSkipForward.setOnKeyListener { _, keyCode, event ->
+            if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
+                when (event.action) {
+                    KeyEvent.ACTION_DOWN -> {
+                        if (event.repeatCount == 0) {
+                            // First press
+                            skipForwardStartTime = System.currentTimeMillis()
+                            skipForward(5000)
+                        } else if (event.repeatCount > 2) {
+                            // Repeated key events - trigger continuous skip
+                            if (skipForwardJob == null) {
+                                startContinuousSkipForward()
+                            }
+                        }
+                        true
+                    }
+                    KeyEvent.ACTION_UP -> {
+                        stopContinuousSkipForward()
+                        true
+                    }
+                    else -> false
+                }
+            } else {
+                false
+            }
+        }
+        
+        // Skip Back Button - handles both tap and long press via key events
+        btnSkipBack.setOnClickListener { skipBack(5000) }
+        btnSkipBack.setOnKeyListener { _, keyCode, event ->
+            if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
+                when (event.action) {
+                    KeyEvent.ACTION_DOWN -> {
+                        if (event.repeatCount == 0) {
+                            // First press
+                            skipBackStartTime = System.currentTimeMillis()
+                            skipBack(5000)
+                        } else if (event.repeatCount > 2) {
+                            // Repeated key events - trigger continuous skip
+                            if (skipBackJob == null) {
+                                startContinuousSkipBack()
+                            }
+                        }
+                        true
+                    }
+                    KeyEvent.ACTION_UP -> {
+                        stopContinuousSkipBack()
+                        true
+                    }
+                    else -> false
+                }
+            } else {
+                false
+            }
+        }
+        
         btnNextChannel.setOnClickListener { goToNextChannel() }
         btnPrevChannel.setOnClickListener { goToPreviousChannel() }
         
@@ -280,6 +342,8 @@ class MainActivity : AppCompatActivity() {
         playbackRetryJob?.cancel()
         progressUpdateJob?.cancel()
         hideControlsJob?.cancel()
+        skipForwardJob?.cancel()
+        skipBackJob?.cancel()
         setKeepScreenOn(false)
     }
 
@@ -710,22 +774,52 @@ class MainActivity : AppCompatActivity() {
         btnPlayPause.text = if (isPlaying) getString(R.string.pause) else getString(R.string.play)
     }
 
-    private fun skipForward() {
+    private fun skipForward(timeMs: Long = 5000) {
         player?.apply {
             val targetPosition = if (duration > 0) {
-                (currentPosition + 5000).coerceAtMost(duration)
+                (currentPosition + timeMs).coerceAtMost(duration)
             } else {
-                currentPosition + 5000
+                currentPosition + timeMs
             }
             seekTo(targetPosition)
         }
     }
 
-    private fun skipBack() {
+    private fun skipBack(timeMs: Long = 5000) {
         player?.apply {
-            val targetPosition = (currentPosition - 5000).coerceAtLeast(0)
+            val targetPosition = (currentPosition - timeMs).coerceAtLeast(0)
             seekTo(targetPosition)
         }
+    }
+
+    private fun startContinuousSkipForward() {
+        stopContinuousSkipForward()
+        skipForwardJob = lifecycleScope.launch {
+            while (isActive) {
+                skipForward(30000) // 30 seconds
+                delay(200) // Update every 200ms
+            }
+        }
+    }
+
+    private fun stopContinuousSkipForward() {
+        skipForwardJob?.cancel()
+        skipForwardJob = null
+    }
+
+    private fun startContinuousSkipBack() {
+        stopContinuousSkipBack()
+        skipBackJob = lifecycleScope.launch {
+            while (isActive) {
+                skipBack(30000) // 30 seconds
+                delay(200) // Update every 200ms
+            }
+        }
+    }
+
+    private fun stopContinuousSkipBack() {
+        skipBackJob?.cancel()
+        skipBackJob = null
     }
 
     private fun startProgressUpdate() {
